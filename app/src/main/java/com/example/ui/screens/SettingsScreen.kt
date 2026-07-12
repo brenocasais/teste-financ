@@ -1,0 +1,1253 @@
+package com.example.ui.screens
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.auth.AuthManager
+import com.example.data.model.Account
+import com.example.data.model.Category
+import com.example.data.model.EnvelopeGroup
+import com.example.data.model.Subcategory
+import com.example.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
+
+@Composable
+fun SettingsScreen(
+    viewModel: MainViewModel,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    val userId = viewModel.currentUserId
+
+    // Room DB Flows
+    val accounts by viewModel.repository.getAccountsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val envelopeGroups by viewModel.repository.getEnvelopeGroupsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // UI States
+    val authState by viewModel.authState.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
+
+    // Dialog Control States
+    var activeDialog by remember { mutableStateOf<SettingsDialog?>(null) }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 11.1 PROFILE CARD
+        item {
+            ProfileCard(
+                authState = authState,
+                onLogoutClick = {
+                    viewModel.logout { }
+                }
+            )
+        }
+
+        // 11.2 THEME / APPEARANCE
+        item {
+            AppearanceCard(
+                currentTheme = themeMode,
+                onThemeSelected = { viewModel.setThemeMode(it) }
+            )
+        }
+
+        // 11.3 ACCOUNTS CRUD
+        item {
+            AccountsCrudCard(
+                accounts = accounts,
+                onAddAccount = { activeDialog = SettingsDialog.AddAccount },
+                onEditAccount = { activeDialog = SettingsDialog.EditAccount(it) },
+                onDeleteAccount = {
+                    scope.launch {
+                        viewModel.repository.deleteAccount(it)
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+
+        // 11.4 ENVELOPES CRUD
+        item {
+            EnvelopesCrudCard(
+                groups = envelopeGroups,
+                onAddGroup = { activeDialog = SettingsDialog.AddEnvelopeGroup },
+                onEditGroup = { activeDialog = SettingsDialog.EditEnvelopeGroup(it) },
+                onDeleteGroup = {
+                    scope.launch {
+                        viewModel.repository.deleteEnvelopeGroup(it)
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+
+        // 11.5 CATEGORIES & SUBCATEGORIES CRUD
+        item {
+            CategoriesCrudCard(
+                categories = categories,
+                subcategories = subcategories,
+                envelopeGroups = envelopeGroups,
+                onAddCategory = { activeDialog = SettingsDialog.AddCategory },
+                onEditCategory = { activeDialog = SettingsDialog.EditCategory(it) },
+                onDeleteCategory = {
+                    scope.launch {
+                        viewModel.repository.deleteCategory(it)
+                        viewModel.triggerPush()
+                    }
+                },
+                onAddSubcategory = { activeDialog = SettingsDialog.AddSubcategory },
+                onEditSubcategory = { activeDialog = SettingsDialog.EditSubcategory(it) },
+                onDeleteSubcategory = {
+                    scope.launch {
+                        viewModel.repository.deleteSubcategory(it)
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+
+        // 11.9 SYNC SETTINGS
+        item {
+            SyncSettingsCard(
+                viewModel = viewModel,
+                syncState = syncState,
+                syncLogs = syncLogs
+            )
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    // Handle Active Dialogs
+    when (val dialog = activeDialog) {
+        SettingsDialog.AddAccount -> {
+            AccountFormDialog(
+                account = null,
+                onDismiss = { activeDialog = null },
+                onSave = { acc ->
+                    scope.launch {
+                        viewModel.repository.insertAccount(acc.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        is SettingsDialog.EditAccount -> {
+            AccountFormDialog(
+                account = dialog.account,
+                onDismiss = { activeDialog = null },
+                onSave = { acc ->
+                    scope.launch {
+                        viewModel.repository.updateAccount(acc.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        SettingsDialog.AddEnvelopeGroup -> {
+            EnvelopeGroupFormDialog(
+                group = null,
+                onDismiss = { activeDialog = null },
+                onSave = { g ->
+                    scope.launch {
+                        viewModel.repository.insertEnvelopeGroup(g.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        is SettingsDialog.EditEnvelopeGroup -> {
+            EnvelopeGroupFormDialog(
+                group = dialog.group,
+                onDismiss = { activeDialog = null },
+                onSave = { g ->
+                    scope.launch {
+                        viewModel.repository.updateEnvelopeGroup(g.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        SettingsDialog.AddCategory -> {
+            CategoryFormDialog(
+                category = null,
+                envelopeGroups = envelopeGroups,
+                onDismiss = { activeDialog = null },
+                onSave = { cat ->
+                    scope.launch {
+                        viewModel.repository.insertCategory(cat.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        is SettingsDialog.EditCategory -> {
+            CategoryFormDialog(
+                category = dialog.category,
+                envelopeGroups = envelopeGroups,
+                onDismiss = { activeDialog = null },
+                onSave = { cat ->
+                    scope.launch {
+                        viewModel.repository.updateCategory(cat.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        SettingsDialog.AddSubcategory -> {
+            SubcategoryFormDialog(
+                subcategory = null,
+                categories = categories,
+                onDismiss = { activeDialog = null },
+                onSave = { sub ->
+                    scope.launch {
+                        viewModel.repository.insertSubcategory(sub.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        is SettingsDialog.EditSubcategory -> {
+            SubcategoryFormDialog(
+                subcategory = dialog.subcategory,
+                categories = categories,
+                onDismiss = { activeDialog = null },
+                onSave = { sub ->
+                    scope.launch {
+                        viewModel.repository.updateSubcategory(sub.copy(userId = userId))
+                        activeDialog = null
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        null -> {}
+    }
+}
+
+// Sealed class to represent active configuration dialogs
+sealed class SettingsDialog {
+    object AddAccount : SettingsDialog()
+    data class EditAccount(val account: Account) : SettingsDialog()
+    object AddEnvelopeGroup : SettingsDialog()
+    data class EditEnvelopeGroup(val group: EnvelopeGroup) : SettingsDialog()
+    object AddCategory : SettingsDialog()
+    data class EditCategory(val category: Category) : SettingsDialog()
+    object AddSubcategory : SettingsDialog()
+    data class EditSubcategory(val subcategory: Subcategory) : SettingsDialog()
+}
+
+// --- SUB-COMPONENTS ---
+
+@Composable
+fun ProfileCard(
+    authState: AuthManager.AuthState,
+    onLogoutClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Perfil do Usuário", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                val email = when (authState) {
+                    is AuthManager.AuthState.Authenticated -> authState.user.email ?: "Autenticado via Google"
+                    is AuthManager.AuthState.Guest -> "Modo Convidado (Local)"
+                    else -> "Não autenticado"
+                }
+                Text(email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
+            IconButton(
+                onClick = onLogoutClick,
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(Icons.Default.Logout, contentDescription = "Sair")
+            }
+        }
+    }
+}
+
+@Composable
+fun AppearanceCard(
+    currentTheme: String,
+    onThemeSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("Aparência e Tema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = when (currentTheme) {
+                                "LIGHT" -> "Claro"
+                                "DARK" -> "Escuro"
+                                else -> "Seguir Sistema"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val options = listOf("SYSTEM" to "Seguir Sistema", "LIGHT" to "Tema Claro", "DARK" to "Tema Escuro")
+                    options.forEach { (mode, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (currentTheme == mode) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    else Color.Transparent
+                                )
+                                .clickable { onThemeSelected(mode) }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentTheme == mode,
+                                onClick = { onThemeSelected(mode) }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountsCrudCard(
+    accounts: List<Account>,
+    onAddAccount: () -> Unit,
+    onEditAccount: (Account) -> Unit,
+    onDeleteAccount: (Account) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AccountBalance, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("Contas e Cartões", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("${accounts.size} cadastradas", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onAddAccount,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Adicionar Nova Conta")
+                    }
+
+                    if (accounts.isEmpty()) {
+                        Text(
+                            text = "Nenhuma conta cadastrada.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        accounts.forEach { acc ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(acc.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = "Tipo: ${acc.type.replace("_", " ")} | Saldo: R$ %.2f".format(acc.initial_balance),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Row {
+                                    IconButton(onClick = { onEditAccount(acc) }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { onDeleteAccount(acc) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EnvelopesCrudCard(
+    groups: List<EnvelopeGroup>,
+    onAddGroup: () -> Unit,
+    onEditGroup: (EnvelopeGroup) -> Unit,
+    onDeleteGroup: (EnvelopeGroup) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("Envelopes (Grupos)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("${groups.size} criados", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onAddGroup,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Novo Grupo de Envelopes")
+                    }
+
+                    if (groups.isEmpty()) {
+                        Text(
+                            text = "Nenhum grupo criado.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        groups.forEach { group ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(group.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = "Regra 50/30/20: ${group.budget_rule_type ?: "Não associado"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Row {
+                                    IconButton(onClick = { onEditGroup(group) }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { onDeleteGroup(group) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CategoriesCrudCard(
+    categories: List<Category>,
+    subcategories: List<Subcategory>,
+    envelopeGroups: List<EnvelopeGroup>,
+    onAddCategory: () -> Unit,
+    onEditCategory: (Category) -> Unit,
+    onDeleteCategory: (Category) -> Unit,
+    onAddSubcategory: () -> Unit,
+    onEditSubcategory: (Subcategory) -> Unit,
+    onDeleteSubcategory: (Subcategory) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("Categorias e Subcategorias", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("${categories.size} categorias | ${subcategories.size} subcategorias", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Category list
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Categorias", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                            TextButton(onClick = onAddCategory) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Nova Categoria")
+                            }
+                        }
+
+                        if (categories.isEmpty()) {
+                            Text("Nenhuma categoria criada.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        } else {
+                            categories.forEach { cat ->
+                                val groupName = envelopeGroups.find { it.id == cat.envelope_group_id }?.name ?: "Sem envelope"
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(cat.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                        Text("Grupo: $groupName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                    }
+                                    Row {
+                                        IconButton(onClick = { onEditCategory(cat) }) {
+                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                        IconButton(onClick = { onDeleteCategory(cat) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                    // Subcategory list
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Subcategorias", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                            TextButton(onClick = onAddSubcategory) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Nova Subcategoria")
+                            }
+                        }
+
+                        if (subcategories.isEmpty()) {
+                            Text("Nenhuma subcategoria criada.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        } else {
+                            subcategories.forEach { sub ->
+                                val catName = categories.find { it.id == sub.category_id }?.name ?: "Sem categoria"
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(sub.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                        Text("Categoria: $catName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                    }
+                                    Row {
+                                        IconButton(onClick = { onEditSubcategory(sub) }) {
+                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                        IconButton(onClick = { onDeleteSubcategory(sub) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SyncSettingsCard(
+    viewModel: MainViewModel,
+    syncState: MainViewModel.SyncState,
+    syncLogs: List<String>
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("Sincronização Cloud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        val statusText = when (syncState) {
+                            is MainViewModel.SyncState.Syncing -> "Sincronizando..."
+                            is MainViewModel.SyncState.Success -> "Sincronizado"
+                            is MainViewModel.SyncState.Error -> "Erro na sincronização"
+                            else -> "Pronto"
+                        }
+                        Text(statusText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.triggerPush() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = viewModel.currentUserId != "GUEST"
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Enviar", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { viewModel.triggerPull() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = viewModel.currentUserId != "GUEST"
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Baixar", fontSize = 12.sp)
+                        }
+                    }
+
+                    if (viewModel.currentUserId == "GUEST") {
+                        Text(
+                            text = "Sincronização desativada no modo Convidado.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Text("Registro de Auditoria (Sync Logs)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        if (syncLogs.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Nenhum evento registrado.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(syncLogs) { log ->
+                                    Text(
+                                        text = log,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- CRUD DIALOGS ---
+
+@Composable
+fun AccountFormDialog(
+    account: Account?,
+    onDismiss: () -> Unit,
+    onSave: (Account) -> Unit
+) {
+    var name by remember { mutableStateOf(account?.name ?: "") }
+    var type by remember { mutableStateOf(account?.type ?: "CONTA_CORRENTE") }
+    var balance by remember { mutableStateOf(account?.initial_balance?.toString() ?: "") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = if (account == null) "Nova Conta" else "Editar Conta",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome da Conta") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Tipo da Conta", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    val options = listOf(
+                        "CONTA_CORRENTE" to "Conta Corrente",
+                        "CARTAO_CREDITO" to "Cartão de Crédito",
+                        "DINHEIRO" to "Dinheiro em Espécie"
+                    )
+                    options.forEach { (key, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { type = key }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = type == key, onClick = { type = key })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = balance,
+                    onValueChange = { balance = it },
+                    label = { Text("Saldo Inicial") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank()) {
+                                val dBalance = balance.toDoubleOrNull() ?: 0.0
+                                onSave(
+                                    Account(
+                                        id = account?.id ?: 0,
+                                        name = name,
+                                        type = type,
+                                        initial_balance = dBalance,
+                                        archived = account?.archived ?: false
+                                    )
+                                )
+                            }
+                        }
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EnvelopeGroupFormDialog(
+    group: EnvelopeGroup?,
+    onDismiss: () -> Unit,
+    onSave: (EnvelopeGroup) -> Unit
+) {
+    var name by remember { mutableStateOf(group?.name ?: "") }
+    var order by remember { mutableStateOf(group?.sort_order?.toString() ?: "0") }
+    var ruleType by remember { mutableStateOf(group?.budget_rule_type ?: "NECESSIDADE") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = if (group == null) "Novo Grupo de Envelopes" else "Editar Grupo de Envelopes",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome do Grupo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = order,
+                    onValueChange = { order = it },
+                    label = { Text("Ordem de Exibição") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Regra de Orçamento 50/30/20", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    val options = listOf(
+                        "NECESSIDADE" to "Necessidades Essenciais",
+                        "DESEJO" to "Desejos Pessoais",
+                        "POUPANCA" to "Poupança / Investimento"
+                    )
+                    options.forEach { (key, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ruleType = key }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = ruleType == key, onClick = { ruleType = key })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank()) {
+                                onSave(
+                                    EnvelopeGroup(
+                                        id = group?.id ?: 0,
+                                        name = name,
+                                        sort_order = order.toIntOrNull() ?: 0,
+                                        budget_rule_type = ruleType,
+                                        archived = group?.archived ?: false
+                                    )
+                                )
+                            }
+                        }
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CategoryFormDialog(
+    category: Category?,
+    envelopeGroups: List<EnvelopeGroup>,
+    onDismiss: () -> Unit,
+    onSave: (Category) -> Unit
+) {
+    var name by remember { mutableStateOf(category?.name ?: "") }
+    var selectedGroup by remember { mutableStateOf(category?.envelope_group_id ?: envelopeGroups.firstOrNull()?.id) }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = if (category == null) "Nova Categoria" else "Editar Categoria",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome da Categoria") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Grupo de Envelopes Relacionado", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    val activeGroupText = envelopeGroups.find { it.id == selectedGroup }?.name ?: "Selecione um grupo"
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .clickable { dropdownExpanded = true }
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(activeGroupText)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+
+                        DropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            envelopeGroups.forEach { group ->
+                                DropdownMenuItem(
+                                    text = { Text(group.name) },
+                                    onClick = {
+                                        selectedGroup = group.id
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank()) {
+                                onSave(
+                                    Category(
+                                        id = category?.id ?: 0,
+                                        name = name,
+                                        envelope_group_id = selectedGroup,
+                                        archived = category?.archived ?: false
+                                    )
+                                )
+                            }
+                        }
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SubcategoryFormDialog(
+    subcategory: Subcategory?,
+    categories: List<Category>,
+    onDismiss: () -> Unit,
+    onSave: (Subcategory) -> Unit
+) {
+    var name by remember { mutableStateOf(subcategory?.name ?: "") }
+    var selectedCat by remember { mutableStateOf(subcategory?.category_id ?: categories.firstOrNull()?.id) }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = if (subcategory == null) "Nova Subcategoria" else "Editar Subcategoria",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome da Subcategoria") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Categoria Relacionada (Obrigatória)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    val activeCatText = categories.find { it.id == selectedCat }?.name ?: "Selecione uma categoria"
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .clickable { dropdownExpanded = true }
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(activeCatText)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+
+                        DropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            categories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name) },
+                                    onClick = {
+                                        selectedCat = cat.id
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank() && selectedCat != null) {
+                                onSave(
+                                    Subcategory(
+                                        id = subcategory?.id ?: 0,
+                                        name = name,
+                                        category_id = selectedCat!!,
+                                        archived = subcategory?.archived ?: false
+                                    )
+                                )
+                            }
+                        }
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}

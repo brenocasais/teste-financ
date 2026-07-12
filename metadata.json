@@ -1,0 +1,6 @@
+{
+  "name": "Meu Financeiro 2.0",
+  "description": "App de controle financeiro pessoal com envelopes, contas, sincronização e segurança local.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

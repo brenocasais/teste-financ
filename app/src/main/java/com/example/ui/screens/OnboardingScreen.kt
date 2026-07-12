@@ -177,6 +177,7 @@ fun OnboardingScreen(
                         6 -> InitialGoalStep { currentStep++ }
                         7 -> SecurityStep {
                             viewModel.setOnboardingCompleted(true)
+                            viewModel.triggerPush()
                             onOnboardingFinished()
                         }
                     }

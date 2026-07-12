@@ -29,7 +29,10 @@ class MeuFinanceiroApplication : Application() {
             accountDao = database.accountDao(),
             envelopeGroupDao = database.envelopeGroupDao(),
             categoryDao = database.categoryDao(),
-            subcategoryDao = database.subcategoryDao()
+            subcategoryDao = database.subcategoryDao(),
+            transactionDao = database.transactionDao(),
+            budgetAllocationDao = database.budgetAllocationDao(),
+            allocationMovementDao = database.allocationMovementDao()
         )
         userPreferences = UserPreferences(this)
         authManager = AuthManager()

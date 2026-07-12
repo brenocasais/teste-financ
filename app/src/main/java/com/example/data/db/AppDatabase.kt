@@ -8,15 +8,21 @@ import com.example.data.model.Account
 import com.example.data.model.Category
 import com.example.data.model.EnvelopeGroup
 import com.example.data.model.Subcategory
+import com.example.data.model.Transaction
+import com.example.data.model.BudgetAllocation
+import com.example.data.model.AllocationMovement
 
 @Database(
     entities = [
         Account::class,
         EnvelopeGroup::class,
         Category::class,
-        Subcategory::class
+        Subcategory::class,
+        Transaction::class,
+        BudgetAllocation::class,
+        AllocationMovement::class
     ],
-    version = 1,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +30,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun envelopeGroupDao(): EnvelopeGroupDao
     abstract fun categoryDao(): CategoryDao
     abstract fun subcategoryDao(): SubcategoryDao
+    abstract fun transactionDao(): TransactionDao
+    abstract fun budgetAllocationDao(): BudgetAllocationDao
+    abstract fun allocationMovementDao(): AllocationMovementDao
 
     companion object {
         @Volatile

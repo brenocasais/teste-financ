@@ -5,6 +5,7 @@ import com.example.data.db.*
 import com.example.data.model.*
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.tasks.await
 import java.util.Date
 
@@ -12,14 +13,81 @@ class FinanceRepository(
     private val accountDao: AccountDao,
     private val envelopeGroupDao: EnvelopeGroupDao,
     private val categoryDao: CategoryDao,
-    private val subcategoryDao: SubcategoryDao
+    private val subcategoryDao: SubcategoryDao,
+    private val transactionDao: TransactionDao,
+    private val budgetAllocationDao: BudgetAllocationDao,
+    private val allocationMovementDao: AllocationMovementDao
 ) {
+    // --- BUDGET ALLOCATIONS ---
+    fun getBudgetAllocationsFlow(userId: String): Flow<List<BudgetAllocation>> = budgetAllocationDao.getBudgetAllocationsFlow(userId)
+    fun getBudgetAllocationsForMonthFlow(userId: String, month: String): Flow<List<BudgetAllocation>> = budgetAllocationDao.getBudgetAllocationsForMonthFlow(userId, month)
+    suspend fun getAllBudgetAllocations(userId: String): List<BudgetAllocation> = budgetAllocationDao.getAllBudgetAllocations(userId)
+    suspend fun getBudgetAllocationsForMonth(userId: String, month: String): List<BudgetAllocation> = budgetAllocationDao.getBudgetAllocationsForMonth(userId, month)
+    suspend fun getBudgetAllocation(categoryId: Int, subcategoryId: Int?, month: String, userId: String): BudgetAllocation? = budgetAllocationDao.getBudgetAllocation(categoryId, subcategoryId, month, userId)
+    suspend fun insertBudgetAllocation(budgetAllocation: BudgetAllocation): Long = budgetAllocationDao.insert(budgetAllocation)
+    suspend fun updateBudgetAllocation(budgetAllocation: BudgetAllocation) = budgetAllocationDao.update(budgetAllocation)
+    suspend fun deleteBudgetAllocation(budgetAllocation: BudgetAllocation) = budgetAllocationDao.delete(budgetAllocation)
+
+    // --- ALLOCATION MOVEMENTS ---
+    fun getAllocationMovementsFlow(userId: String): Flow<List<AllocationMovement>> = allocationMovementDao.getAllocationMovementsFlow(userId)
+    suspend fun getAllAllocationMovements(userId: String): List<AllocationMovement> = allocationMovementDao.getAllAllocationMovements(userId)
+    suspend fun insertAllocationMovement(movement: AllocationMovement): Long = allocationMovementDao.insert(movement)
+    suspend fun updateAllocationMovement(movement: AllocationMovement) = allocationMovementDao.update(movement)
+    suspend fun deleteAllocationMovement(movement: AllocationMovement) = allocationMovementDao.delete(movement)
+
     // --- ACCOUNTS ---
     fun getAccountsFlow(userId: String): Flow<List<Account>> = accountDao.getAccountsFlow(userId)
     suspend fun getAllAccounts(userId: String): List<Account> = accountDao.getAllAccounts(userId)
     suspend fun insertAccount(account: Account): Long = accountDao.insert(account)
     suspend fun updateAccount(account: Account) = accountDao.update(account)
     suspend fun deleteAccount(account: Account) = accountDao.delete(account)
+
+    // --- TRANSACTIONS ---
+    fun getTransactionsFlow(userId: String): Flow<List<Transaction>> = transactionDao.getTransactionsFlow(userId)
+    suspend fun getAllTransactions(userId: String): List<Transaction> = transactionDao.getAllTransactions(userId)
+    suspend fun getTransactionById(id: Int): Transaction? = transactionDao.getTransactionById(id)
+    suspend fun insertTransaction(transaction: Transaction): Long = transactionDao.insert(transaction)
+    suspend fun updateTransaction(transaction: Transaction) = transactionDao.update(transaction)
+    suspend fun deleteTransaction(transaction: Transaction) = transactionDao.delete(transaction)
+
+    // --- DERIVED ACCOUNT BALANCE FLOW ---
+    fun getAccountsWithBalancesFlow(userId: String): Flow<List<Account>> {
+        return combine(
+            getAccountsFlow(userId),
+            getTransactionsFlow(userId)
+        ) { accountsList, transactionsList ->
+            accountsList.map { account ->
+                val creditos = transactionsList.filter { it.type == "RECEITA" && it.account_id == account.id }
+                    .sumOf { it.value } +
+                    transactionsList.filter { it.type == "TRANSFERENCIA" && it.to_account_id == account.id }
+                    .sumOf { it.value }
+
+                val debitos = transactionsList.filter { it.type == "DESPESA" && it.account_id == account.id }
+                    .sumOf { it.value } +
+                    transactionsList.filter { it.type == "TRANSFERENCIA" && it.account_id == account.id }
+                    .sumOf { it.value }
+
+                account.copy(initial_balance = account.initial_balance + creditos - debitos)
+            }
+        }
+    }
+
+    suspend fun getAccountWithBalance(accountId: Int, userId: String): Account? {
+        val account = accountDao.getAccountById(accountId) ?: return null
+        val transactions = transactionDao.getAllTransactions(userId)
+        val creditos = transactions.filter { it.type == "RECEITA" && it.account_id == account.id }
+            .sumOf { it.value } +
+            transactions.filter { it.type == "TRANSFERENCIA" && it.to_account_id == account.id }
+            .sumOf { it.value }
+
+        val debitos = transactions.filter { it.type == "DESPESA" && it.account_id == account.id }
+            .sumOf { it.value } +
+            transactions.filter { it.type == "TRANSFERENCIA" && it.account_id == account.id }
+            .sumOf { it.value }
+
+        return account.copy(initial_balance = account.initial_balance + creditos - debitos)
+    }
+
 
     // --- ENVELOPE GROUPS ---
     fun getEnvelopeGroupsFlow(userId: String): Flow<List<EnvelopeGroup>> = envelopeGroupDao.getEnvelopeGroupsFlow(userId)

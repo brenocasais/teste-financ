@@ -61,6 +61,117 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedMonthCalendar = MutableStateFlow<java.util.Calendar>(java.util.Calendar.getInstance())
     val selectedMonthCalendar: StateFlow<java.util.Calendar> = _selectedMonthCalendar
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val prontoParaAtribuirFlow: StateFlow<Double> = authState.flatMapLatest { auth ->
+        val userId = authManager.currentUserId
+        combine(
+            repository.getAccountsFlow(userId),
+            repository.getTransactionsFlow(userId),
+            repository.getBudgetAllocationsFlow(userId),
+            repository.getAllocationMovementsFlow(userId),
+            repository.getGoalsFlow(userId),
+            _selectedMonthCalendar
+        ) { args ->
+            @Suppress("UNCHECKED_CAST")
+            val accounts = args[0] as List<com.example.data.model.Account>
+            @Suppress("UNCHECKED_CAST")
+            val transactions = args[1] as List<com.example.data.model.Transaction>
+            @Suppress("UNCHECKED_CAST")
+            val budgetAllocations = args[2] as List<com.example.data.model.BudgetAllocation>
+            @Suppress("UNCHECKED_CAST")
+            val allocationMovements = args[3] as List<com.example.data.model.AllocationMovement>
+            @Suppress("UNCHECKED_CAST")
+            val goals = args[4] as List<com.example.data.model.Goal>
+            val calendar = args[5] as java.util.Calendar
+
+            val monthStr = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(calendar.time)
+            calculateProntoParaAtribuirForMonth(
+                accounts, transactions, budgetAllocations, allocationMovements, goals, monthStr
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun getProntoParaAtribuirForMonth(monthStr: String): Flow<Double> {
+        return authState.flatMapLatest { auth ->
+            val userId = authManager.currentUserId
+            combine(
+                repository.getAccountsFlow(userId),
+                repository.getTransactionsFlow(userId),
+                repository.getBudgetAllocationsFlow(userId),
+                repository.getAllocationMovementsFlow(userId),
+                repository.getGoalsFlow(userId)
+            ) { accounts, transactions, budgetAllocations, allocationMovements, goals ->
+                calculateProntoParaAtribuirForMonth(
+                    accounts, transactions, budgetAllocations, allocationMovements, goals, monthStr
+                )
+            }
+        }
+    }
+
+    fun calculateProntoParaAtribuirForMonth(
+        accounts: List<com.example.data.model.Account>,
+        transactions: List<com.example.data.model.Transaction>,
+        budgetAllocations: List<com.example.data.model.BudgetAllocation>,
+        allocationMovements: List<com.example.data.model.AllocationMovement>,
+        goals: List<com.example.data.model.Goal>,
+        monthStr: String
+    ): Double {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US)
+
+        // 1. Total balance of all accounts up to monthStr
+        val totalAccountBalance = accounts.sumOf { account ->
+            val creditos = transactions.filter {
+                it.date.length >= 7 && it.date.substring(0, 7) <= monthStr && (
+                    (it.type == "RECEITA" && it.account_id == account.id) ||
+                    (it.type == "TRANSFERENCIA" && it.to_account_id == account.id)
+                )
+            }.sumOf { it.value }
+
+            val debitos = transactions.filter {
+                it.date.length >= 7 && it.date.substring(0, 7) <= monthStr && (
+                    (it.type == "DESPESA" && it.account_id == account.id) ||
+                    (it.type == "TRANSFERENCIA" && it.account_id == account.id)
+                )
+            }.sumOf { it.value }
+
+            account.initial_balance + creditos - debitos
+        }
+
+        // 2. Disponível of all BudgetAllocations in monthStr
+        val allocsInMonth = budgetAllocations.filter { it.month == monthStr }
+        val totalDisponivel = allocsInMonth.sumOf { alloc ->
+            val alocado = allocationMovements.filter { it.dest_budget_allocation_id == alloc.id }.sumOf { it.amount } -
+                          allocationMovements.filter { it.source_budget_allocation_id == alloc.id }.sumOf { it.amount }
+
+            val gasto = transactions.filter {
+                it.type == "DESPESA" &&
+                it.date.startsWith(monthStr) &&
+                it.category_id == alloc.category_id &&
+                it.subcategory_id == alloc.subcategory_id
+            }.sumOf { it.value }
+
+            alocado - gasto
+        }
+
+        // 3. Current value of all Goals (via AllocationMovement up to monthStr)
+        val totalGoalsCurrentValue = goals.sumOf { goal ->
+            val destSum = allocationMovements.filter {
+                it.dest_goal_id == goal.id &&
+                sdf.format(java.util.Date(it.moved_at)) <= monthStr
+            }.sumOf { it.amount }
+
+            val sourceSum = allocationMovements.filter {
+                it.source_goal_id == goal.id &&
+                sdf.format(java.util.Date(it.moved_at)) <= monthStr
+            }.sumOf { it.amount }
+
+            destSum - sourceSum
+        }
+
+        return totalAccountBalance - totalDisponivel - totalGoalsCurrentValue
+    }
+
     fun setSelectedMonth(calendar: java.util.Calendar) {
         _selectedMonthCalendar.value = calendar
     }
@@ -74,6 +185,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             authState.collect { state ->
                 val userId = currentUserId
+                // Part 2, Step 5: Clean up any existing "META" type transactions from local DB (Room)
+                viewModelScope.launch {
+                    val metaTransactions = repository.getAllTransactions(userId).filter { it.type == "META" }
+                    if (metaTransactions.isNotEmpty()) {
+                        addSyncLog("Limpando ${metaTransactions.size} transações de metas obsoletas...")
+                        metaTransactions.forEach { tx ->
+                            repository.deleteTransaction(tx)
+                        }
+                    }
+                }
                 if (state is AuthManager.AuthState.Authenticated) {
                     addSyncLog("Usuário autenticado. Iniciando sincronização...")
                     triggerPull()
@@ -367,38 +488,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun insertAllocationMovement(movement: AllocationMovement, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             repository.insertAllocationMovement(movement)
-            
-            // Generate goal transaction of type "META"
-            val targetGoalId = movement.dest_goal_id ?: movement.source_goal_id
-            if (targetGoalId != null) {
-                val goalName = repository.getGoalById(targetGoalId)?.name ?: "Meta"
-                val accounts = repository.getAllAccounts(movement.userId)
-                val accountId = accounts.firstOrNull { !it.archived }?.id ?: accounts.firstOrNull()?.id ?: 1
-                val isAllocation = movement.dest_goal_id != null
-                val prefix = if (isAllocation) "Alocação" else "Retirada"
-                val finalDesc = "$prefix: $goalName" + (if (!movement.note.isNullOrBlank()) " - ${movement.note}" else "")
-                val finalValue = if (isAllocation) movement.amount else -movement.amount
-                val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(movement.moved_at))
-
-                val tx = Transaction(
-                    account_id = accountId,
-                    to_account_id = null,
-                    category_id = null,
-                    subcategory_id = null,
-                    type = "META",
-                    value = finalValue,
-                    description = finalDesc,
-                    date = sdfDate,
-                    installment_plan_id = null,
-                    installment_number = null,
-                    recurrence_rule_id = null,
-                    synced = false,
-                    userId = movement.userId,
-                    goal_id = targetGoalId
-                )
-                repository.insertTransaction(tx)
-            }
-
             triggerPush()
             onComplete()
         }
@@ -406,35 +495,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAllocationMovement(movement: AllocationMovement, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
-            val allMovements = repository.getAllAllocationMovements(movement.userId)
-            val oldMovement = allMovements.find { it.id == movement.id }
-
             repository.updateAllocationMovement(movement)
-
-            if (oldMovement != null) {
-                val targetGoalId = oldMovement.dest_goal_id ?: oldMovement.source_goal_id
-                if (targetGoalId != null) {
-                    val expectedOldValue = if (oldMovement.dest_goal_id != null) oldMovement.amount else -oldMovement.amount
-                    val txs = repository.getAllTransactions(movement.userId)
-                    val matchingTx = txs.find { tx ->
-                        tx.type == "META" &&
-                        tx.goal_id == targetGoalId &&
-                        Math.abs(tx.value - expectedOldValue) < 0.01
-                    }
-                    if (matchingTx != null) {
-                        val newValue = if (movement.dest_goal_id != null) movement.amount else -movement.amount
-                        val goalName = repository.getGoalById(targetGoalId)?.name ?: "Meta"
-                        val prefix = if (movement.dest_goal_id != null) "Alocação" else "Retirada"
-                        val desc = "$prefix: $goalName" + (if (!movement.note.isNullOrBlank()) " - ${movement.note}" else "")
-                        repository.updateTransaction(
-                            matchingTx.copy(
-                                value = newValue,
-                                description = desc
-                            )
-                        )
-                    }
-                }
-            }
             triggerPush()
             onComplete()
         }
@@ -443,21 +504,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteAllocationMovement(movement: AllocationMovement, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             repository.deleteAllocationMovement(movement)
-            // Delete associated META transaction
-            val targetGoalId = movement.dest_goal_id ?: movement.source_goal_id
-            if (targetGoalId != null) {
-                val expectedValue = if (movement.dest_goal_id != null) movement.amount else -movement.amount
-                val txs = repository.getAllTransactions(movement.userId)
-                val matchingTx = txs.find { tx ->
-                    tx.type == "META" &&
-                    tx.goal_id == targetGoalId &&
-                    Math.abs(tx.value - expectedValue) < 0.01 &&
-                    (movement.note == null || tx.description.contains(movement.note!!))
-                }
-                if (matchingTx != null) {
-                    repository.deleteTransaction(matchingTx)
-                }
-            }
             triggerPush()
             onComplete()
         }
@@ -515,37 +561,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 userId = userId
             )
             repository.insertAllocationMovement(movement)
-
-            // --- GENERATE GOAL TRANSACTION OF TYPE "META" ---
-            val goalIdForTx = destGoalId ?: sourceGoalId
-            if (goalIdForTx != null) {
-                val goalName = repository.getGoalById(goalIdForTx)?.name ?: "Meta"
-                val accounts = repository.getAllAccounts(userId)
-                val accountId = accounts.firstOrNull { !it.archived }?.id ?: accounts.firstOrNull()?.id ?: 1
-                val isAllocation = destGoalId != null
-                val prefix = if (isAllocation) "Alocação" else "Retirada"
-                val finalDesc = "$prefix: $goalName" + (if (!note.isNullOrBlank()) " - $note" else "")
-                val finalValue = if (isAllocation) amount else -amount
-                val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(timestamp))
-
-                val tx = Transaction(
-                    account_id = accountId,
-                    to_account_id = null,
-                    category_id = null,
-                    subcategory_id = null,
-                    type = "META",
-                    value = finalValue,
-                    description = finalDesc,
-                    date = sdfDate,
-                    installment_plan_id = null,
-                    installment_number = null,
-                    recurrence_rule_id = null,
-                    synced = false,
-                    userId = userId,
-                    goal_id = goalIdForTx
-                )
-                repository.insertTransaction(tx)
-            }
 
             triggerPush()
             onComplete()

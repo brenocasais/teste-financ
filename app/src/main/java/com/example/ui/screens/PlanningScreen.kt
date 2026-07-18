@@ -97,10 +97,9 @@ fun PlanningScreen(viewModel: MainViewModel) {
     val allocationMovements by viewModel.repository.getAllocationMovementsFlow(userId).collectAsStateWithLifecycle(emptyList())
     val goals by viewModel.repository.getGoalsFlow(userId).collectAsStateWithLifecycle(emptyList())
 
-    val goalBalances = remember(goals, allocationMovements, transactions) {
+    val goalBalances = remember(goals, allocationMovements) {
         goals.associate { goal ->
-            val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount } +
-                          transactions.filter { it.type == "META" && it.goal_id == goal.id }.sumOf { it.value }
+            val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount }
             val sourceSum = allocationMovements.filter { it.source_goal_id == goal.id }.sumOf { it.amount }
             goal.id to (destSum - sourceSum)
         }
@@ -112,7 +111,6 @@ fun PlanningScreen(viewModel: MainViewModel) {
         }
     }
     val accounts by viewModel.repository.getAccountsWithBalancesFlow(userId).collectAsStateWithLifecycle(emptyList())
-    val rawAccounts by viewModel.repository.getAccountsFlow(userId).collectAsStateWithLifecycle(emptyList())
 
     // Calculations & maps compiled reactively via derivedStateOf
     val totalAccountBalance by remember(accounts) {
@@ -186,43 +184,11 @@ fun PlanningScreen(viewModel: MainViewModel) {
         }
     }
 
-    val rawInitialBalance by remember(rawAccounts) {
-        derivedStateOf { rawAccounts.sumOf { it.initial_balance } }
+    // Previous month Ready to Assign computation (Part 1: single source of truth via Flow)
+    val prevProntoParaAtribuirFlow = remember(viewModel, prevMonthStr) {
+        viewModel.getProntoParaAtribuirForMonth(prevMonthStr)
     }
-
-    // Previous month Ready to Assign computation
-    val revenueTransactionsUpToMPrev by remember(transactions, prevMonthStr) {
-        derivedStateOf {
-            transactions.filter { 
-                it.type == "RECEITA" && it.date.length >= 7 && it.date.substring(0, 7) <= prevMonthStr 
-            }.sumOf { it.value }
-        }
-    }
-
-    val netAllocatedUpToMPrev by remember(budgetAllocations, allocationMovements, prevMonthStr) {
-        derivedStateOf {
-            val allocationMonthMap = budgetAllocations.associate { it.id to it.month }
-            val outFlow = allocationMovements.filter { 
-                it.source_budget_allocation_id == null && it.dest_budget_allocation_id != null 
-            }.sumOf { movement ->
-                val destMonth = allocationMonthMap[movement.dest_budget_allocation_id]
-                if (destMonth != null && destMonth <= prevMonthStr) movement.amount else 0.0
-            }
-            val inFlow = allocationMovements.filter { 
-                it.dest_budget_allocation_id == null && it.source_budget_allocation_id != null 
-            }.sumOf { movement ->
-                val sourceMonth = allocationMonthMap[movement.source_budget_allocation_id]
-                if (sourceMonth != null && sourceMonth <= prevMonthStr) movement.amount else 0.0
-            }
-            outFlow - inFlow
-        }
-    }
-
-    val prevProntoParaAtribuir by remember(rawInitialBalance, revenueTransactionsUpToMPrev, netAllocatedUpToMPrev, totalGoalsCurrentValue) {
-        derivedStateOf {
-            rawInitialBalance + revenueTransactionsUpToMPrev - netAllocatedUpToMPrev - totalGoalsCurrentValue
-        }
-    }
+    val prevProntoParaAtribuir by prevProntoParaAtribuirFlow.collectAsStateWithLifecycle(initialValue = 0.0)
 
     val hasAllocationInPrevMonth by remember(budgetAllocations, prevMonthStr) {
         derivedStateOf { budgetAllocations.any { it.month == prevMonthStr } }
@@ -270,39 +236,8 @@ fun PlanningScreen(viewModel: MainViewModel) {
         }
     }
 
-    // Current month Ready to Assign computation
-    val revenueTransactionsUpToM by remember(transactions, currentMonthStr) {
-        derivedStateOf {
-            transactions.filter { 
-                it.type == "RECEITA" && it.date.length >= 7 && it.date.substring(0, 7) <= currentMonthStr 
-            }.sumOf { it.value }
-        }
-    }
-
-    val netAllocatedUpToM by remember(budgetAllocations, allocationMovements, currentMonthStr) {
-        derivedStateOf {
-            val allocationMonthMap = budgetAllocations.associate { it.id to it.month }
-            val outFlow = allocationMovements.filter { 
-                it.source_budget_allocation_id == null && it.dest_budget_allocation_id != null 
-            }.sumOf { movement ->
-                val destMonth = allocationMonthMap[movement.dest_budget_allocation_id]
-                if (destMonth != null && destMonth <= currentMonthStr) movement.amount else 0.0
-            }
-            val inFlow = allocationMovements.filter { 
-                it.dest_budget_allocation_id == null && it.source_budget_allocation_id != null 
-            }.sumOf { movement ->
-                val sourceMonth = allocationMonthMap[movement.source_budget_allocation_id]
-                if (sourceMonth != null && sourceMonth <= currentMonthStr) movement.amount else 0.0
-            }
-            outFlow - inFlow
-        }
-    }
-
-    val prontoParaAtribuir by remember(rawInitialBalance, revenueTransactionsUpToM, netAllocatedUpToM, totalGoalsCurrentValue) {
-        derivedStateOf {
-            rawInitialBalance + revenueTransactionsUpToM - netAllocatedUpToM - totalGoalsCurrentValue
-        }
-    }
+    // Current month Ready to Assign computation (Part 1: single source of truth via Flow)
+    val prontoParaAtribuir by viewModel.prontoParaAtribuirFlow.collectAsStateWithLifecycle()
 
     val economizedText = remember(totalEconomizadoPrevMonth, currencyFormatter) {
         currencyFormatter.format(totalEconomizadoPrevMonth)

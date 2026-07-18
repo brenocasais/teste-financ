@@ -289,8 +289,7 @@ fun TransactionsScreen(
                 FilterTypeItem("Todas", "TODAS"),
                 FilterTypeItem("Receitas", "RECEITA"),
                 FilterTypeItem("Despesas", "DESPESA"),
-                FilterTypeItem("Transf.", "TRANSFERENCIA"),
-                FilterTypeItem("Metas", "META")
+                FilterTypeItem("Transf.", "TRANSFERENCIA")
             )
 
             Row(
@@ -888,12 +887,11 @@ fun TransactionAddEditDialog(
                     }
                 }
 
-                // 1. TIPO DE TRANSAÇÃO (DESPESA / RECEITA / TRANSFERENCIA / META)
+                // 1. TIPO DE TRANSAÇÃO (DESPESA / RECEITA / TRANSFERENCIA)
                 val types = listOf(
                     TransactionTypeOption("Despesa", "DESPESA"),
                     TransactionTypeOption("Receita", "RECEITA"),
-                    TransactionTypeOption("Transf.", "TRANSFERENCIA"),
-                    TransactionTypeOption("Meta", "META")
+                    TransactionTypeOption("Transf.", "TRANSFERENCIA")
                 )
 
                 Row(
@@ -905,13 +903,11 @@ fun TransactionAddEditDialog(
                         val activeColor = when (opt.id) {
                             "RECEITA" -> MaterialTheme.colorScheme.primary
                             "DESPESA" -> MaterialTheme.colorScheme.error
-                            "META" -> MaterialTheme.colorScheme.tertiary
                             else -> MaterialTheme.colorScheme.secondary
                         }
                         val onActiveColor = when (opt.id) {
                             "RECEITA" -> MaterialTheme.colorScheme.onPrimary
                             "DESPESA" -> MaterialTheme.colorScheme.onError
-                            "META" -> MaterialTheme.colorScheme.onTertiary
                             else -> MaterialTheme.colorScheme.onSecondary
                         }
                         Box(

@@ -60,54 +60,14 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         SimpleDateFormat("yyyy-MM", Locale.US).format(selectedMonthCalendar.time)
     }
 
-    val rawAccounts by viewModel.repository.getAccountsFlow(userId).collectAsStateWithLifecycle(emptyList())
-    val rawInitialBalance by remember(rawAccounts) {
-        derivedStateOf { rawAccounts.sumOf { it.initial_balance } }
-    }
+    val prontoParaAtribuir by viewModel.prontoParaAtribuirFlow.collectAsStateWithLifecycle()
 
-    val revenueTransactionsUpToM by remember(transactions, currentMonthStr) {
-        derivedStateOf {
-            transactions.filter {
-                it.type == "RECEITA" && it.date.length >= 7 && it.date.substring(0, 7) <= currentMonthStr
-            }.sumOf { it.value }
-        }
-    }
-
-    val netAllocatedUpToM by remember(budgetAllocations, allocationMovements, currentMonthStr) {
-        derivedStateOf {
-            val allocationMonthMap = budgetAllocations.associate { it.id to it.month }
-            val outFlow = allocationMovements.filter {
-                it.source_budget_allocation_id == null && it.dest_budget_allocation_id != null
-            }.sumOf { movement ->
-                val destMonth = allocationMonthMap[movement.dest_budget_allocation_id]
-                if (destMonth != null && destMonth <= currentMonthStr) movement.amount else 0.0
-            }
-            val inFlow = allocationMovements.filter {
-                it.dest_budget_allocation_id == null && it.source_budget_allocation_id != null
-            }.sumOf { movement ->
-                val sourceMonth = allocationMonthMap[movement.source_budget_allocation_id]
-                if (sourceMonth != null && sourceMonth <= currentMonthStr) movement.amount else 0.0
-            }
-            outFlow - inFlow
-        }
-    }
-
-    // Dynamic Goals Balances
+    // Dynamic Goals Balances (Part 2, Rule 4: derived ONLY from AllocationMovement)
     val goalBalances = remember(goals, allocationMovements) {
         goals.associate { goal ->
             val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount }
             val sourceSum = allocationMovements.filter { it.source_goal_id == goal.id }.sumOf { it.amount }
             goal.id to (destSum - sourceSum)
-        }
-    }
-
-    val totalGoalsCurrentValue by remember(goalBalances) {
-        derivedStateOf { goalBalances.values.sum() }
-    }
-
-    val prontoParaAtribuir by remember(rawInitialBalance, revenueTransactionsUpToM, netAllocatedUpToM, totalGoalsCurrentValue) {
-        derivedStateOf {
-            rawInitialBalance + revenueTransactionsUpToM - netAllocatedUpToM - totalGoalsCurrentValue
         }
     }
 

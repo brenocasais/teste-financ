@@ -169,10 +169,9 @@ fun DashboardTab(
         java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(selectedMonthCalendar.time)
     }
 
-    val goalBalances = remember(goals, allocationMovements, transactions) {
+    val goalBalances = remember(goals, allocationMovements) {
         goals.associate { goal ->
-            val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount } +
-                          transactions.filter { it.type == "META" && it.goal_id == goal.id }.sumOf { it.value }
+            val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount }
             val sourceSum = allocationMovements.filter { it.source_goal_id == goal.id }.sumOf { it.amount }
             goal.id to (destSum - sourceSum)
         }
@@ -182,14 +181,7 @@ fun DashboardTab(
         goalBalances.values.sum()
     }
 
-    val prontoParaAtribuir = remember(totalBalance, budgetAllocations, allocationMovements, currentMonth, totalGoalsCurrentValue) {
-        val budgetAllocationsInMonth = budgetAllocations.filter { it.month == currentMonth }
-        val totalAlocadoNoMes = budgetAllocationsInMonth.sumOf { alloc ->
-            allocationMovements.filter { it.dest_budget_allocation_id == alloc.id }.sumOf { it.amount } -
-            allocationMovements.filter { it.source_budget_allocation_id == alloc.id }.sumOf { it.amount }
-        }
-        totalBalance - totalAlocadoNoMes - totalGoalsCurrentValue
-    }
+    val prontoParaAtribuir by viewModel.prontoParaAtribuirFlow.collectAsStateWithLifecycle()
 
     val monthTransactions = remember(transactions, currentMonth) {
         transactions.filter { it.date.startsWith(currentMonth) }
@@ -203,8 +195,8 @@ fun DashboardTab(
         monthTransactions.filter { it.type == "DESPESA" }.sumOf { it.value }
     }
 
-    val totalMetasCurrentMonth = remember(allocationMovements, currentMonth, transactions) {
-        val moves = allocationMovements.filter {
+    val totalMetasCurrentMonth = remember(allocationMovements, currentMonth) {
+        allocationMovements.filter {
             val m = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date(it.moved_at))
             m == currentMonth
         }.sumOf {
@@ -212,10 +204,6 @@ fun DashboardTab(
             else if (it.source_goal_id != null) -it.amount
             else 0.0
         }
-        val txs = transactions.filter {
-            it.type == "META" && it.date.startsWith(currentMonth)
-        }.sumOf { it.value }
-        moves + txs
     }
 
     val saldoLiquido = totalReceitas - totalDespesas - totalMetasCurrentMonth

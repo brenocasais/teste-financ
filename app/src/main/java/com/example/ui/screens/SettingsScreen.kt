@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -130,6 +131,13 @@ fun SettingsScreen(
                 viewModel = viewModel,
                 syncState = syncState,
                 syncLogs = syncLogs
+            )
+        }
+
+        // 11.10 BACKUP E EXPORTAÇÃO
+        item {
+            BackupSettingsCard(
+                viewModel = viewModel
             )
         }
 
@@ -715,6 +723,120 @@ fun SyncSettingsCard(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BackupSettingsCard(
+    viewModel: MainViewModel,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val userId = viewModel.currentUserId
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Backup,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Backup e Exportação",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Cópia de segurança independente",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Gere uma cópia em formato JSON contendo absolutamente todos os seus dados locais (Contas, Transações, Envelopes, Alocações, Planejamentos, Metas, etc.). Você pode salvar este arquivo de forma segura ou compartilhá-lo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    val jsonContent = viewModel.exportAllDataJson(userId)
+                                    val backupFile = java.io.File(context.cacheDir, "meu_financeiro_backup.json")
+                                    backupFile.writeText(jsonContent)
+
+                                    val authority = "${context.packageName}.fileprovider"
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context,
+                                        authority,
+                                        backupFile
+                                    )
+
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "application/json"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Backup de Dados")
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+
+                                    context.startActivity(
+                                        android.content.Intent.createChooser(
+                                            shareIntent,
+                                            "Compartilhar arquivo de Backup"
+                                        )
+                                    )
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Exportar todos os dados (JSON)")
                     }
                 }
             }

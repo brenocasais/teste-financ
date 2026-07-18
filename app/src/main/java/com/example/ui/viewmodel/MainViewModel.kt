@@ -19,6 +19,8 @@ import com.example.data.model.InstallmentPlan
 import com.example.data.model.RecurrenceRule
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -265,6 +267,187 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _syncState.value = SyncState.Error("Falha ao enviar dados para o servidor.")
                 addSyncLog("Erro: Falha no upload de dados.")
             }
+        }
+    }
+
+    suspend fun exportAllDataJson(userId: String): String {
+        return withContext(Dispatchers.IO) {
+            val root = org.json.JSONObject()
+
+            // Accounts
+            val accountsArr = org.json.JSONArray()
+            repository.getAllAccounts(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("name", it.name)
+                obj.put("type", it.type)
+                obj.put("initial_balance", it.initial_balance)
+                obj.put("archived", it.archived)
+                accountsArr.put(obj)
+            }
+            root.put("accounts", accountsArr)
+
+            // Envelope Groups
+            val groupsArr = org.json.JSONArray()
+            repository.getAllEnvelopeGroups(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("name", it.name)
+                obj.put("sort_order", it.sort_order)
+                obj.put("budget_rule_type", it.budget_rule_type ?: org.json.JSONObject.NULL)
+                obj.put("archived", it.archived)
+                groupsArr.put(obj)
+            }
+            root.put("envelope_groups", groupsArr)
+
+            // Categories
+            val categoriesArr = org.json.JSONArray()
+            repository.getAllCategories(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("envelope_group_id", it.envelope_group_id ?: org.json.JSONObject.NULL)
+                obj.put("name", it.name)
+                obj.put("archived", it.archived)
+                categoriesArr.put(obj)
+            }
+            root.put("categories", categoriesArr)
+
+            // Subcategories
+            val subcategoriesArr = org.json.JSONArray()
+            repository.getAllSubcategories(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("category_id", it.category_id)
+                obj.put("name", it.name)
+                obj.put("archived", it.archived)
+                subcategoriesArr.put(obj)
+            }
+            root.put("subcategories", subcategoriesArr)
+
+            // Transactions
+            val transactionsArr = org.json.JSONArray()
+            repository.getAllTransactions(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("account_id", it.account_id)
+                obj.put("to_account_id", it.to_account_id ?: org.json.JSONObject.NULL)
+                obj.put("category_id", it.category_id ?: org.json.JSONObject.NULL)
+                obj.put("subcategory_id", it.subcategory_id ?: org.json.JSONObject.NULL)
+                obj.put("type", it.type)
+                obj.put("value", it.value)
+                obj.put("description", it.description)
+                obj.put("date", it.date)
+                obj.put("installment_plan_id", it.installment_plan_id ?: org.json.JSONObject.NULL)
+                obj.put("installment_number", it.installment_number ?: org.json.JSONObject.NULL)
+                obj.put("recurrence_rule_id", it.recurrence_rule_id ?: org.json.JSONObject.NULL)
+                obj.put("is_recurrence_override", it.is_recurrence_override)
+                obj.put("attachment_uri", it.attachment_uri ?: org.json.JSONObject.NULL)
+                obj.put("attachment_name", it.attachment_name ?: org.json.JSONObject.NULL)
+                obj.put("attachment_type", it.attachment_type ?: org.json.JSONObject.NULL)
+                obj.put("synced", it.synced)
+                obj.put("goal_id", it.goal_id ?: org.json.JSONObject.NULL)
+                transactionsArr.put(obj)
+            }
+            root.put("transactions", transactionsArr)
+
+            // Budget Allocations
+            val allocationsArr = org.json.JSONArray()
+            repository.getAllBudgetAllocations(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("category_id", it.category_id)
+                obj.put("subcategory_id", it.subcategory_id ?: org.json.JSONObject.NULL)
+                obj.put("month", it.month)
+                obj.put("planned_value", it.planned_value)
+                allocationsArr.put(obj)
+            }
+            root.put("budget_allocations", allocationsArr)
+
+            // Allocation Movements
+            val movementsArr = org.json.JSONArray()
+            repository.getAllAllocationMovements(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("source_budget_allocation_id", it.source_budget_allocation_id ?: org.json.JSONObject.NULL)
+                obj.put("source_goal_id", it.source_goal_id ?: org.json.JSONObject.NULL)
+                obj.put("dest_budget_allocation_id", it.dest_budget_allocation_id ?: org.json.JSONObject.NULL)
+                obj.put("dest_goal_id", it.dest_goal_id ?: org.json.JSONObject.NULL)
+                obj.put("amount", it.amount)
+                obj.put("note", it.note ?: org.json.JSONObject.NULL)
+                obj.put("moved_at", it.moved_at)
+                movementsArr.put(obj)
+            }
+            root.put("allocation_movements", movementsArr)
+
+            // Installment Plans
+            val plansArr = org.json.JSONArray()
+            repository.getAllInstallmentPlans(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("account_id", it.account_id)
+                obj.put("category_id", it.category_id)
+                obj.put("subcategory_id", it.subcategory_id ?: org.json.JSONObject.NULL)
+                obj.put("description", it.description)
+                obj.put("total_value", it.total_value)
+                obj.put("installments_count", it.installments_count)
+                obj.put("first_installment_month", it.first_installment_month)
+                obj.put("created_at", it.created_at)
+                plansArr.put(obj)
+            }
+            root.put("installment_plans", plansArr)
+
+            // Recurrence Rules
+            val rulesArr = org.json.JSONArray()
+            repository.getAllRecurrenceRules(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("account_id", it.account_id)
+                obj.put("category_id", it.category_id)
+                obj.put("subcategory_id", it.subcategory_id ?: org.json.JSONObject.NULL)
+                obj.put("description", it.description)
+                obj.put("value", it.value)
+                obj.put("type", it.type)
+                obj.put("frequency", it.frequency)
+                obj.put("frequency_interval", it.frequency_interval)
+                obj.put("start_date", it.start_date)
+                obj.put("end_month", it.end_month ?: org.json.JSONObject.NULL)
+                obj.put("active", it.active)
+                rulesArr.put(obj)
+            }
+            root.put("recurrence_rules", rulesArr)
+
+            // Goals
+            val goalsArr = org.json.JSONArray()
+            repository.getAllGoals(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("name", it.name)
+                obj.put("target_value", it.target_value)
+                obj.put("start_date", it.start_date)
+                obj.put("deadline", it.deadline)
+                obj.put("color", it.color)
+                obj.put("archived", it.archived)
+                goalsArr.put(obj)
+            }
+            root.put("goals", goalsArr)
+
+            // Notification Logs
+            val logsArr = org.json.JSONArray()
+            repository.getAllNotificationLogs(userId).forEach {
+                val obj = org.json.JSONObject()
+                obj.put("id", it.id)
+                obj.put("type", it.type)
+                obj.put("reference_id", it.reference_id ?: org.json.JSONObject.NULL)
+                obj.put("reference_month", it.reference_month ?: org.json.JSONObject.NULL)
+                obj.put("sent_at", it.sent_at)
+                logsArr.put(obj)
+            }
+            root.put("notification_logs", logsArr)
+
+            root.put("exported_at", System.currentTimeMillis())
+            root.put("exported_by", userId)
+
+            root.toString(2)
         }
     }
 

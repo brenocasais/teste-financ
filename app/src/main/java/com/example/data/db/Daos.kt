@@ -222,6 +222,9 @@ interface InstallmentPlanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(installmentPlan: InstallmentPlan): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(plans: List<InstallmentPlan>)
+
     @Delete
     suspend fun delete(installmentPlan: InstallmentPlan)
 
@@ -242,6 +245,9 @@ interface RecurrenceRuleDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(recurrenceRule: RecurrenceRule): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(rules: List<RecurrenceRule>)
 
     @Update
     suspend fun update(recurrenceRule: RecurrenceRule)
@@ -267,6 +273,9 @@ interface GoalDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(goal: Goal): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(goals: List<Goal>)
+
     @Update
     suspend fun update(goal: Goal)
 
@@ -287,6 +296,9 @@ interface NotificationLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(log: NotificationLog): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(logs: List<NotificationLog>)
 
     @Query("DELETE FROM notification_logs WHERE userId = :userId")
     suspend fun clearAll(userId: String)

@@ -24,11 +24,37 @@ import android.os.Build
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.example.data.notification.NotificationTriggerManager
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.app.AlertDialog
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels {
         MainViewModel.Factory(application)
+    }
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (!isGranted) {
+            showPermissionDeniedDialog()
+        }
+    }
+
+    private fun showPermissionDeniedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Notificações Desativadas")
+            .setMessage("Sem a permissão de notificações, os alertas críticos (como categoria com limite estourado, faturas e parcelas vencendo, ou metas concluídas) não poderão ser exibidos. Deseja ativar agora nas configurações?")
+            .setPositiveButton("Ir para Configurações") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            }
+            .setNegativeButton("Agora Não", null)
+            .show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +65,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val permission = android.Manifest.permission.POST_NOTIFICATIONS
             if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                androidx.core.app.ActivityCompat.requestPermissions(this, arrayOf(permission), 101)
+                requestPermissionLauncher.launch(permission)
             }
         }
 

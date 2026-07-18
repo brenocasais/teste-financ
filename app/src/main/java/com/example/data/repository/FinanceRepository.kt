@@ -29,6 +29,9 @@ class FinanceRepository(
     suspend fun insertNotificationLog(log: NotificationLog) =
         notificationLogDao.insert(log)
 
+    suspend fun getAllNotificationLogs(userId: String): List<NotificationLog> =
+        notificationLogDao.getAllLogs(userId)
+
     // --- RECURRENCE RULES ---
     fun getRecurrenceRulesFlow(userId: String): Flow<List<RecurrenceRule>> = recurrenceRuleDao.getRecurrenceRulesFlow(userId)
     suspend fun getAllRecurrenceRules(userId: String): List<RecurrenceRule> = recurrenceRuleDao.getAllRecurrenceRules(userId)
@@ -472,12 +475,26 @@ class FinanceRepository(
             val groups = getAllEnvelopeGroups(userId).map { it.toMap() }
             val categories = getAllCategories(userId).map { it.toMap() }
             val subcategories = getAllSubcategories(userId).map { it.toMap() }
+            val transactions = getAllTransactions(userId).map { it.toMap() }
+            val budgetAllocations = getAllBudgetAllocations(userId).map { it.toMap() }
+            val allocationMovements = getAllAllocationMovements(userId).map { it.toMap() }
+            val installmentPlans = getAllInstallmentPlans(userId).map { it.toMap() }
+            val recurrenceRules = getAllRecurrenceRules(userId).map { it.toMap() }
+            val goals = getAllGoals(userId).map { it.toMap() }
+            val notificationLogs = notificationLogDao.getAllLogs(userId).map { it.toMap() }
 
             val syncData = mapOf(
                 "accounts" to accounts,
                 "envelope_groups" to groups,
                 "categories" to categories,
                 "subcategories" to subcategories,
+                "transactions" to transactions,
+                "budget_allocations" to budgetAllocations,
+                "allocation_movements" to allocationMovements,
+                "installment_plans" to installmentPlans,
+                "recurrence_rules" to recurrenceRules,
+                "goals" to goals,
+                "notification_logs" to notificationLogs,
                 "last_updated" to Date()
             )
 
@@ -497,32 +514,115 @@ class FinanceRepository(
             if (document.exists()) {
                 val data = document.data ?: return false
 
+                // Process Accounts
                 val accountsList = (data["accounts"] as? List<*>)?.mapNotNull { item ->
                     (item as? Map<*, *>)?.let { accountFromMap(it.castKeys(), userId) }
-                } ?: emptyList()
+                }
+                if (accountsList != null) {
+                    accountDao.insertAll(accountsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'accounts' field is null or missing. Skipping accounts sync.")
+                }
 
+                // Process Envelope Groups
                 val groupsList = (data["envelope_groups"] as? List<*>)?.mapNotNull { item ->
                     (item as? Map<*, *>)?.let { envelopeGroupFromMap(it.castKeys(), userId) }
-                } ?: emptyList()
+                }
+                if (groupsList != null) {
+                    envelopeGroupDao.insertAll(groupsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'envelope_groups' field is null or missing. Skipping envelope groups sync.")
+                }
 
+                // Process Categories
                 val categoriesList = (data["categories"] as? List<*>)?.mapNotNull { item ->
                     (item as? Map<*, *>)?.let { categoryFromMap(it.castKeys(), userId) }
-                } ?: emptyList()
+                }
+                if (categoriesList != null) {
+                    categoryDao.insertAll(categoriesList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'categories' field is null or missing. Skipping categories sync.")
+                }
 
+                // Process Subcategories
                 val subcategoriesList = (data["subcategories"] as? List<*>)?.mapNotNull { item ->
                     (item as? Map<*, *>)?.let { subcategoryFromMap(it.castKeys(), userId) }
-                } ?: emptyList()
+                }
+                if (subcategoriesList != null) {
+                    subcategoryDao.insertAll(subcategoriesList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'subcategories' field is null or missing. Skipping subcategories sync.")
+                }
 
-                // Overwrite local Room with pull data
-                accountDao.clearAll(userId)
-                envelopeGroupDao.clearAll(userId)
-                categoryDao.clearAll(userId)
-                subcategoryDao.clearAll(userId)
+                // Process Transactions
+                val transactionsList = (data["transactions"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { transactionFromMap(it.castKeys(), userId) }
+                }
+                if (transactionsList != null) {
+                    transactionDao.insertAll(transactionsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'transactions' field is null or missing. Skipping transactions sync.")
+                }
 
-                accountDao.insertAll(accountsList)
-                envelopeGroupDao.insertAll(groupsList)
-                categoryDao.insertAll(categoriesList)
-                subcategoryDao.insertAll(subcategoriesList)
+                // Process Budget Allocations
+                val allocationsList = (data["budget_allocations"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { budgetAllocationFromMap(it.castKeys(), userId) }
+                }
+                if (allocationsList != null) {
+                    budgetAllocationDao.insertAll(allocationsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'budget_allocations' field is null or missing. Skipping budget allocations sync.")
+                }
+
+                // Process Allocation Movements
+                val movementsList = (data["allocation_movements"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { allocationMovementFromMap(it.castKeys(), userId) }
+                }
+                if (movementsList != null) {
+                    allocationMovementDao.insertAll(movementsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'allocation_movements' field is null or missing. Skipping allocation movements sync.")
+                }
+
+                // Process Installment Plans
+                val plansList = (data["installment_plans"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { installmentPlanFromMap(it.castKeys(), userId) }
+                }
+                if (plansList != null) {
+                    installmentPlanDao.insertAll(plansList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'installment_plans' field is null or missing. Skipping installment plans sync.")
+                }
+
+                // Process Recurrence Rules
+                val rulesList = (data["recurrence_rules"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { recurrenceRuleFromMap(it.castKeys(), userId) }
+                }
+                if (rulesList != null) {
+                    recurrenceRuleDao.insertAll(rulesList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'recurrence_rules' field is null or missing. Skipping recurrence rules sync.")
+                }
+
+                // Process Goals
+                val goalsList = (data["goals"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { goalFromMap(it.castKeys(), userId) }
+                }
+                if (goalsList != null) {
+                    goalDao.insertAll(goalsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'goals' field is null or missing. Skipping goals sync.")
+                }
+
+                // Process Notification Logs
+                val logsList = (data["notification_logs"] as? List<*>)?.mapNotNull { item ->
+                    (item as? Map<*, *>)?.let { notificationLogFromMap(it.castKeys(), userId) }
+                }
+                if (logsList != null) {
+                    notificationLogDao.insertAll(logsList)
+                } else {
+                    Log.w("FinanceRepository", "Pull: 'notification_logs' field is null or missing. Skipping notification logs sync.")
+                }
 
                 Log.d("FinanceRepository", "Pull sync succeeded for $userId")
                 true
@@ -600,6 +700,183 @@ class FinanceRepository(
         category_id = (map["category_id"] as? Long)?.toInt() ?: (map["category_id"] as? Int) ?: 0,
         name = map["name"] as? String ?: "",
         archived = map["archived"] as? Boolean ?: false,
+        userId = userId
+    )
+
+    private fun Transaction.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "account_id" to account_id,
+        "to_account_id" to to_account_id,
+        "category_id" to category_id,
+        "subcategory_id" to subcategory_id,
+        "type" to type,
+        "value" to value,
+        "description" to description,
+        "date" to date,
+        "installment_plan_id" to installment_plan_id,
+        "installment_number" to installment_number,
+        "recurrence_rule_id" to recurrence_rule_id,
+        "is_recurrence_override" to is_recurrence_override,
+        "attachment_uri" to attachment_uri,
+        "attachment_name" to attachment_name,
+        "attachment_type" to attachment_type,
+        "synced" to synced,
+        "goal_id" to goal_id
+    )
+
+    private fun transactionFromMap(map: Map<String, Any?>, userId: String): Transaction = Transaction(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        account_id = (map["account_id"] as? Long)?.toInt() ?: (map["account_id"] as? Int) ?: 0,
+        to_account_id = (map["to_account_id"] as? Long)?.toInt() ?: (map["to_account_id"] as? Int),
+        category_id = (map["category_id"] as? Long)?.toInt() ?: (map["category_id"] as? Int),
+        subcategory_id = (map["subcategory_id"] as? Long)?.toInt() ?: (map["subcategory_id"] as? Int),
+        type = map["type"] as? String ?: "DESPESA",
+        value = (map["value"] as? Double) ?: (map["value"] as? Long)?.toDouble() ?: 0.0,
+        description = map["description"] as? String ?: "",
+        date = map["date"] as? String ?: "",
+        installment_plan_id = (map["installment_plan_id"] as? Long)?.toInt() ?: (map["installment_plan_id"] as? Int),
+        installment_number = (map["installment_number"] as? Long)?.toInt() ?: (map["installment_number"] as? Int),
+        recurrence_rule_id = (map["recurrence_rule_id"] as? Long)?.toInt() ?: (map["recurrence_rule_id"] as? Int),
+        is_recurrence_override = map["is_recurrence_override"] as? Boolean ?: false,
+        attachment_uri = map["attachment_uri"] as? String,
+        attachment_name = map["attachment_name"] as? String,
+        attachment_type = map["attachment_type"] as? String,
+        synced = map["synced"] as? Boolean ?: false,
+        userId = userId,
+        goal_id = (map["goal_id"] as? Long)?.toInt() ?: (map["goal_id"] as? Int)
+    )
+
+    private fun BudgetAllocation.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "category_id" to category_id,
+        "subcategory_id" to subcategory_id,
+        "month" to month,
+        "planned_value" to planned_value
+    )
+
+    private fun budgetAllocationFromMap(map: Map<String, Any?>, userId: String): BudgetAllocation = BudgetAllocation(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        category_id = (map["category_id"] as? Long)?.toInt() ?: (map["category_id"] as? Int) ?: 0,
+        subcategory_id = (map["subcategory_id"] as? Long)?.toInt() ?: (map["subcategory_id"] as? Int),
+        month = map["month"] as? String ?: "",
+        planned_value = (map["planned_value"] as? Double) ?: (map["planned_value"] as? Long)?.toDouble() ?: 0.0,
+        userId = userId
+    )
+
+    private fun AllocationMovement.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "source_budget_allocation_id" to source_budget_allocation_id,
+        "source_goal_id" to source_goal_id,
+        "dest_budget_allocation_id" to dest_budget_allocation_id,
+        "dest_goal_id" to dest_goal_id,
+        "amount" to amount,
+        "note" to note,
+        "moved_at" to moved_at
+    )
+
+    private fun allocationMovementFromMap(map: Map<String, Any?>, userId: String): AllocationMovement = AllocationMovement(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        source_budget_allocation_id = (map["source_budget_allocation_id"] as? Long)?.toInt() ?: (map["source_budget_allocation_id"] as? Int),
+        source_goal_id = (map["source_goal_id"] as? Long)?.toInt() ?: (map["source_goal_id"] as? Int),
+        dest_budget_allocation_id = (map["dest_budget_allocation_id"] as? Long)?.toInt() ?: (map["dest_budget_allocation_id"] as? Int),
+        dest_goal_id = (map["dest_goal_id"] as? Long)?.toInt() ?: (map["dest_goal_id"] as? Int),
+        amount = (map["amount"] as? Double) ?: (map["amount"] as? Long)?.toDouble() ?: 0.0,
+        note = map["note"] as? String,
+        moved_at = (map["moved_at"] as? Long) ?: (map["moved_at"] as? Int)?.toLong() ?: System.currentTimeMillis(),
+        userId = userId
+    )
+
+    private fun InstallmentPlan.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "account_id" to account_id,
+        "category_id" to category_id,
+        "subcategory_id" to subcategory_id,
+        "description" to description,
+        "total_value" to total_value,
+        "installments_count" to installments_count,
+        "first_installment_month" to first_installment_month,
+        "created_at" to created_at
+    )
+
+    private fun installmentPlanFromMap(map: Map<String, Any?>, userId: String): InstallmentPlan = InstallmentPlan(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        account_id = (map["account_id"] as? Long)?.toInt() ?: (map["account_id"] as? Int) ?: 0,
+        category_id = (map["category_id"] as? Long)?.toInt() ?: (map["category_id"] as? Int) ?: 0,
+        subcategory_id = (map["subcategory_id"] as? Long)?.toInt() ?: (map["subcategory_id"] as? Int),
+        description = map["description"] as? String ?: "",
+        total_value = (map["total_value"] as? Double) ?: (map["total_value"] as? Long)?.toDouble() ?: 0.0,
+        installments_count = (map["installments_count"] as? Long)?.toInt() ?: (map["installments_count"] as? Int) ?: 1,
+        first_installment_month = map["first_installment_month"] as? String ?: "",
+        created_at = (map["created_at"] as? Long) ?: (map["created_at"] as? Int)?.toLong() ?: System.currentTimeMillis(),
+        userId = userId
+    )
+
+    private fun RecurrenceRule.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "account_id" to account_id,
+        "category_id" to category_id,
+        "subcategory_id" to subcategory_id,
+        "description" to description,
+        "value" to value,
+        "type" to type,
+        "frequency" to frequency,
+        "frequency_interval" to frequency_interval,
+        "start_date" to start_date,
+        "end_month" to end_month,
+        "active" to active
+    )
+
+    private fun recurrenceRuleFromMap(map: Map<String, Any?>, userId: String): RecurrenceRule = RecurrenceRule(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        account_id = (map["account_id"] as? Long)?.toInt() ?: (map["account_id"] as? Int) ?: 0,
+        category_id = (map["category_id"] as? Long)?.toInt() ?: (map["category_id"] as? Int) ?: 0,
+        subcategory_id = (map["subcategory_id"] as? Long)?.toInt() ?: (map["subcategory_id"] as? Int),
+        description = map["description"] as? String ?: "",
+        value = (map["value"] as? Double) ?: (map["value"] as? Long)?.toDouble() ?: 0.0,
+        type = map["type"] as? String ?: "DESPESA",
+        frequency = map["frequency"] as? String ?: "MENSAL",
+        frequency_interval = (map["frequency_interval"] as? Long)?.toInt() ?: (map["frequency_interval"] as? Int) ?: 1,
+        start_date = map["start_date"] as? String ?: "",
+        end_month = map["end_month"] as? String,
+        active = map["active"] as? Boolean ?: true,
+        userId = userId
+    )
+
+    private fun Goal.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "name" to name,
+        "target_value" to target_value,
+        "start_date" to start_date,
+        "deadline" to deadline,
+        "color" to color,
+        "archived" to archived
+    )
+
+    private fun goalFromMap(map: Map<String, Any?>, userId: String): Goal = Goal(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        name = map["name"] as? String ?: "",
+        target_value = (map["target_value"] as? Double) ?: (map["target_value"] as? Long)?.toDouble() ?: 0.0,
+        start_date = map["start_date"] as? String ?: "",
+        deadline = map["deadline"] as? String ?: "",
+        color = (map["color"] as? Long)?.toInt() ?: (map["color"] as? Int) ?: 0,
+        archived = map["archived"] as? Boolean ?: false,
+        userId = userId
+    )
+
+    private fun NotificationLog.toMap(): Map<String, Any?> = mapOf(
+        "id" to id,
+        "type" to type,
+        "reference_id" to reference_id,
+        "reference_month" to reference_month,
+        "sent_at" to sent_at
+    )
+
+    private fun notificationLogFromMap(map: Map<String, Any?>, userId: String): NotificationLog = NotificationLog(
+        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
+        type = map["type"] as? String ?: "",
+        reference_id = map["reference_id"] as? String,
+        reference_month = map["reference_month"] as? String,
+        sent_at = (map["sent_at"] as? Long) ?: (map["sent_at"] as? Int)?.toLong() ?: System.currentTimeMillis(),
         userId = userId
     )
 

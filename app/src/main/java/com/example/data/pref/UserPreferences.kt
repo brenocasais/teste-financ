@@ -48,6 +48,20 @@ class UserPreferences(private val context: Context) {
         }
     }
 
+    fun isMonthReviewedFlow(userId: String, month: String): Flow<Boolean> {
+        val key = booleanPreferencesKey("reviewed_month_${userId}_${month}")
+        return context.dataStore.data.map { preferences ->
+            preferences[key] ?: false
+        }
+    }
+
+    suspend fun setMonthReviewed(userId: String, month: String, reviewed: Boolean) {
+        val key = booleanPreferencesKey("reviewed_month_${userId}_${month}")
+        context.dataStore.edit { preferences ->
+            preferences[key] = reviewed
+        }
+    }
+
     suspend fun clearAll() {
         context.dataStore.edit { preferences ->
             preferences.clear()

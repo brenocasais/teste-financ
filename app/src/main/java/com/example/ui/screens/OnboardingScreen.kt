@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.Account
 import com.example.data.model.Category
-import com.example.data.model.EnvelopeGroup
+import com.example.data.model.Subcategory
 import com.example.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
@@ -47,35 +47,35 @@ fun OnboardingScreen(
     // Temporary income configuration
     var monthlyIncome by remember { mutableStateOf("") }
 
-    // Helper function to insert the pre-filled envelope groups & categories
+    // Helper function to insert the pre-filled categories & subcategories
     fun insertTemplateEnvelopes() {
         scope.launch {
             val db = viewModel.repository
             // Necessidades
-            val id1 = db.insertEnvelopeGroup(
-                EnvelopeGroup(name = "Necessidades", sort_order = 1, budget_rule_type = "NECESSIDADE", userId = userId)
+            val id1 = db.insertCategory(
+                Category(name = "Necessidades", userId = userId)
             ).toInt()
-            db.insertCategory(Category(envelope_group_id = id1, name = "Aluguel / Prestação", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id1, name = "Energia / Água / Gás", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id1, name = "Internet / Celular", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id1, name = "Alimentação / Supermercado", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id1, name = "Transporte / Combustível", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id1, name = "Aluguel / Prestação", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id1, name = "Energia / Água / Gás", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id1, name = "Internet / Celular", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id1, name = "Alimentação / Supermercado", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id1, name = "Transporte / Combustível", userId = userId))
 
             // Desejos
-            val id2 = db.insertEnvelopeGroup(
-                EnvelopeGroup(name = "Desejos", sort_order = 2, budget_rule_type = "DESEJO", userId = userId)
+            val id2 = db.insertCategory(
+                Category(name = "Desejos", userId = userId)
             ).toInt()
-            db.insertCategory(Category(envelope_group_id = id2, name = "Lazer / Passeios", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id2, name = "Restaurantes / Delivery", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id2, name = "Compras / Vestuário", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id2, name = "Assinaturas / Streaming", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id2, name = "Lazer / Passeios", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id2, name = "Restaurantes / Delivery", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id2, name = "Compras / Vestuário", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id2, name = "Assinaturas / Streaming", userId = userId))
 
             // Poupança
-            val id3 = db.insertEnvelopeGroup(
-                EnvelopeGroup(name = "Poupança", sort_order = 3, budget_rule_type = "POUPANCA", userId = userId)
+            val id3 = db.insertCategory(
+                Category(name = "Poupança", userId = userId)
             ).toInt()
-            db.insertCategory(Category(envelope_group_id = id3, name = "Reserva de Emergência", userId = userId))
-            db.insertCategory(Category(envelope_group_id = id3, name = "Investimentos", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id3, name = "Reserva de Emergência", userId = userId))
+            db.insertSubcategory(Subcategory(category_id = id3, name = "Investimentos", userId = userId))
         }
     }
 

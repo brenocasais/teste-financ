@@ -8,6 +8,9 @@ import com.example.data.model.Subcategory
 import com.example.data.model.Transaction
 import com.example.data.model.BudgetAllocation
 import com.example.data.model.AllocationMovement
+import com.example.data.model.InstallmentPlan
+import com.example.data.model.RecurrenceRule
+import com.example.data.model.Goal
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -150,8 +153,19 @@ interface BudgetAllocationDao {
     @Query("SELECT * FROM budget_allocations WHERE userId = :userId AND month = :month")
     suspend fun getBudgetAllocationsForMonth(userId: String, month: String): List<BudgetAllocation>
 
-    @Query("SELECT * FROM budget_allocations WHERE category_id = :categoryId AND (subcategory_id = :subcategoryId OR (subcategory_id IS NULL AND :subcategoryId IS NULL)) AND month = :month AND userId = :userId LIMIT 1")
-    suspend fun getBudgetAllocation(categoryId: Int, subcategoryId: Int?, month: String, userId: String): BudgetAllocation?
+    @Query("SELECT * FROM budget_allocations WHERE category_id = :categoryId AND subcategory_id = :subcategoryId AND month = :month AND userId = :userId LIMIT 1")
+    suspend fun getBudgetAllocationWithSub(categoryId: Int, subcategoryId: Int, month: String, userId: String): BudgetAllocation?
+
+    @Query("SELECT * FROM budget_allocations WHERE category_id = :categoryId AND subcategory_id IS NULL AND month = :month AND userId = :userId LIMIT 1")
+    suspend fun getBudgetAllocationWithoutSub(categoryId: Int, month: String, userId: String): BudgetAllocation?
+
+    suspend fun getBudgetAllocation(categoryId: Int, subcategoryId: Int?, month: String, userId: String): BudgetAllocation? {
+        return if (subcategoryId != null) {
+            getBudgetAllocationWithSub(categoryId, subcategoryId, month, userId)
+        } else {
+            getBudgetAllocationWithoutSub(categoryId, month, userId)
+        }
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(budgetAllocation: BudgetAllocation): Long
@@ -190,6 +204,75 @@ interface AllocationMovementDao {
     suspend fun delete(allocationMovement: AllocationMovement)
 
     @Query("DELETE FROM allocation_movements WHERE userId = :userId")
+    suspend fun clearAll(userId: String)
+}
+
+@Dao
+interface InstallmentPlanDao {
+    @Query("SELECT * FROM installment_plans WHERE userId = :userId ORDER BY created_at DESC")
+    fun getInstallmentPlansFlow(userId: String): Flow<List<InstallmentPlan>>
+
+    @Query("SELECT * FROM installment_plans WHERE userId = :userId ORDER BY created_at DESC")
+    suspend fun getAllInstallmentPlans(userId: String): List<InstallmentPlan>
+
+    @Query("SELECT * FROM installment_plans WHERE id = :id")
+    suspend fun getInstallmentPlanById(id: Int): InstallmentPlan?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(installmentPlan: InstallmentPlan): Long
+
+    @Delete
+    suspend fun delete(installmentPlan: InstallmentPlan)
+
+    @Query("DELETE FROM installment_plans WHERE userId = :userId")
+    suspend fun clearAll(userId: String)
+}
+
+@Dao
+interface RecurrenceRuleDao {
+    @Query("SELECT * FROM recurrence_rules WHERE userId = :userId ORDER BY id DESC")
+    fun getRecurrenceRulesFlow(userId: String): Flow<List<RecurrenceRule>>
+
+    @Query("SELECT * FROM recurrence_rules WHERE userId = :userId ORDER BY id DESC")
+    suspend fun getAllRecurrenceRules(userId: String): List<RecurrenceRule>
+
+    @Query("SELECT * FROM recurrence_rules WHERE id = :id")
+    suspend fun getRecurrenceRuleById(id: Int): RecurrenceRule?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(recurrenceRule: RecurrenceRule): Long
+
+    @Update
+    suspend fun update(recurrenceRule: RecurrenceRule)
+
+    @Delete
+    suspend fun delete(recurrenceRule: RecurrenceRule)
+
+    @Query("DELETE FROM recurrence_rules WHERE userId = :userId")
+    suspend fun clearAll(userId: String)
+}
+
+@Dao
+interface GoalDao {
+    @Query("SELECT * FROM goals WHERE userId = :userId ORDER BY archived ASC, name ASC")
+    fun getGoalsFlow(userId: String): Flow<List<Goal>>
+
+    @Query("SELECT * FROM goals WHERE userId = :userId ORDER BY archived ASC, name ASC")
+    suspend fun getAllGoals(userId: String): List<Goal>
+
+    @Query("SELECT * FROM goals WHERE id = :id")
+    suspend fun getGoalById(id: Int): Goal?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(goal: Goal): Long
+
+    @Update
+    suspend fun update(goal: Goal)
+
+    @Delete
+    suspend fun delete(goal: Goal)
+
+    @Query("DELETE FROM goals WHERE userId = :userId")
     suspend fun clearAll(userId: String)
 }
 

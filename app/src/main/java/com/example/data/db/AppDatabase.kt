@@ -11,6 +11,9 @@ import com.example.data.model.Subcategory
 import com.example.data.model.Transaction
 import com.example.data.model.BudgetAllocation
 import com.example.data.model.AllocationMovement
+import com.example.data.model.InstallmentPlan
+import com.example.data.model.RecurrenceRule
+import com.example.data.model.Goal
 
 @Database(
     entities = [
@@ -20,9 +23,12 @@ import com.example.data.model.AllocationMovement
         Subcategory::class,
         Transaction::class,
         BudgetAllocation::class,
-        AllocationMovement::class
+        AllocationMovement::class,
+        InstallmentPlan::class,
+        RecurrenceRule::class,
+        Goal::class
     ],
-    version = 3,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +39,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun budgetAllocationDao(): BudgetAllocationDao
     abstract fun allocationMovementDao(): AllocationMovementDao
+    abstract fun installmentPlanDao(): InstallmentPlanDao
+    abstract fun recurrenceRuleDao(): RecurrenceRuleDao
+    abstract fun goalDao(): GoalDao
 
     companion object {
         @Volatile

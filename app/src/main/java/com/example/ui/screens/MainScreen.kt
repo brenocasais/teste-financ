@@ -6,6 +6,8 @@ import java.text.SimpleDateFormat
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.auth.AuthManager
 import com.example.data.model.Account
+import com.example.data.model.InstallmentPlan
 import com.example.ui.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +46,12 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToTab.collect { tabIndex ->
+            selectedTab = tabIndex
+        }
+    }
 
     val tabs = listOf(
         NavigationTab("Início", Icons.Default.Home, Icons.Outlined.Home),
@@ -123,8 +132,8 @@ fun MainScreen(
                     0 -> DashboardTab(viewModel)
                     1 -> TransactionsScreen(viewModel)
                     2 -> PlanningScreen(viewModel)
-                    3 -> PlaceholderTab("Métricas", Icons.Default.TrendingUp, "Gráficos de receitas, despesas, aderência à regra 50/30/20, projeções e simuladores financeiros. Estará disponível na Fase 8 do projeto.")
-                    4 -> PlaceholderTab("Metas", Icons.Default.EmojiEvents, "Crie objetivos de poupança de médio/longo prazo e faça aportes ou resgates. Estará disponível na Fase 7 do projeto.")
+                    3 -> MetricsScreen(viewModel)
+                    4 -> GoalsScreen(viewModel)
                     5 -> SettingsScreen(viewModel)
                 }
             }
@@ -137,8 +146,7 @@ data class NavigationTab(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 )
-
-// --- HOME / DASHBOARD TAB ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardTab(
     viewModel: MainViewModel
@@ -148,6 +156,7 @@ fun DashboardTab(
     val transactions by viewModel.repository.getTransactionsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val budgetAllocations by viewModel.repository.getBudgetAllocationsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val allocationMovements by viewModel.repository.getAllocationMovementsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val goals by viewModel.repository.getGoalsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
 
     var selectedAccountForDetail by remember { mutableStateOf<Account?>(null) }
 
@@ -160,13 +169,26 @@ fun DashboardTab(
         java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(selectedMonthCalendar.time)
     }
 
-    val prontoParaAtribuir = remember(totalBalance, budgetAllocations, allocationMovements, currentMonth) {
+    val goalBalances = remember(goals, allocationMovements, transactions) {
+        goals.associate { goal ->
+            val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount } +
+                          transactions.filter { it.type == "META" && it.goal_id == goal.id }.sumOf { it.value }
+            val sourceSum = allocationMovements.filter { it.source_goal_id == goal.id }.sumOf { it.amount }
+            goal.id to (destSum - sourceSum)
+        }
+    }
+
+    val totalGoalsCurrentValue = remember(goalBalances) {
+        goalBalances.values.sum()
+    }
+
+    val prontoParaAtribuir = remember(totalBalance, budgetAllocations, allocationMovements, currentMonth, totalGoalsCurrentValue) {
         val budgetAllocationsInMonth = budgetAllocations.filter { it.month == currentMonth }
         val totalAlocadoNoMes = budgetAllocationsInMonth.sumOf { alloc ->
             allocationMovements.filter { it.dest_budget_allocation_id == alloc.id }.sumOf { it.amount } -
             allocationMovements.filter { it.source_budget_allocation_id == alloc.id }.sumOf { it.amount }
         }
-        totalBalance - totalAlocadoNoMes
+        totalBalance - totalAlocadoNoMes - totalGoalsCurrentValue
     }
 
     val monthTransactions = remember(transactions, currentMonth) {
@@ -181,7 +203,22 @@ fun DashboardTab(
         monthTransactions.filter { it.type == "DESPESA" }.sumOf { it.value }
     }
 
-    val saldoLiquido = totalReceitas - totalDespesas
+    val totalMetasCurrentMonth = remember(allocationMovements, currentMonth, transactions) {
+        val moves = allocationMovements.filter {
+            val m = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date(it.moved_at))
+            m == currentMonth
+        }.sumOf {
+            if (it.dest_goal_id != null) it.amount
+            else if (it.source_goal_id != null) -it.amount
+            else 0.0
+        }
+        val txs = transactions.filter {
+            it.type == "META" && it.date.startsWith(currentMonth)
+        }.sumOf { it.value }
+        moves + txs
+    }
+
+    val saldoLiquido = totalReceitas - totalDespesas - totalMetasCurrentMonth
 
     LazyColumn(
         modifier = Modifier
@@ -214,18 +251,11 @@ fun DashboardTab(
                         style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
                         color = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Dinheiro total disponível nas suas contas para ser alocado nos envelopes.",
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                        color = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                    )
                 }
             }
         }
 
-        // 3. SUMMARY MONTH CARD (Receitas x Despesas x Saldo Líquido)
+        // 3. SUMMARY MONTH CARD (Receitas x Despesas x Metas x Saldo Líquido)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -235,30 +265,45 @@ fun DashboardTab(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SummaryItem(
-                        title = "Receitas",
-                        value = "R$ %.2f".format(totalReceitas),
-                        color = MaterialTheme.colorScheme.primary,
-                        icon = Icons.Default.TrendingUp
-                    )
-                    VerticalDivider(modifier = Modifier.height(40.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    SummaryItem(
-                        title = "Despesas",
-                        value = "R$ %.2f".format(totalDespesas),
-                        color = MaterialTheme.colorScheme.error,
-                        icon = Icons.Default.TrendingDown
-                    )
-                    VerticalDivider(modifier = Modifier.height(40.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    SummaryItem(
-                        title = "Saldo Líquido",
-                        value = "R$ %.2f".format(saldoLiquido),
-                        color = MaterialTheme.colorScheme.secondary,
-                        icon = Icons.Default.Done
-                    )
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SummaryItem(
+                            title = "Receitas",
+                            value = "R$ %.2f".format(totalReceitas),
+                            color = MaterialTheme.colorScheme.primary,
+                            icon = Icons.Default.TrendingUp
+                        )
+                    }
+                    VerticalDivider(modifier = Modifier.height(30.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SummaryItem(
+                            title = "Despesas",
+                            value = "R$ %.2f".format(totalDespesas),
+                            color = MaterialTheme.colorScheme.error,
+                            icon = Icons.Default.TrendingDown
+                        )
+                    }
+                    VerticalDivider(modifier = Modifier.height(30.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SummaryItem(
+                            title = "Metas",
+                            value = "R$ %.2f".format(totalMetasCurrentMonth),
+                            color = Color(0xFF9B59B6),
+                            icon = Icons.Default.Star
+                        )
+                    }
+                    VerticalDivider(modifier = Modifier.height(30.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    Column(modifier = Modifier.weight(1.1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SummaryItem(
+                            title = "Saldo Líq.",
+                            value = "R$ %.2f".format(saldoLiquido),
+                            color = MaterialTheme.colorScheme.secondary,
+                            icon = Icons.Default.Done
+                        )
+                    }
                 }
             }
         }
@@ -558,9 +603,14 @@ fun AccountDetailDialog(
     val transactions by viewModel.repository.getTransactionsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val installmentPlans by viewModel.repository.getInstallmentPlansFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
 
     val accountTransactions = remember(transactions, account) {
         transactions.filter { it.account_id == account.id || it.to_account_id == account.id }
+    }
+
+    val accountPlans = remember(installmentPlans, account) {
+        installmentPlans.filter { it.account_id == account.id }
     }
 
     val currentMonth = remember {
@@ -596,7 +646,8 @@ fun AccountDetailDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 400.dp),
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (account.type == "CARTAO_CREDITO") {
@@ -637,20 +688,38 @@ fun AccountDetailDialog(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
+                        Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(currentMonthTx) { tx ->
+                            currentMonthTx.forEach { tx ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
-                                        Text(tx.description, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(tx.description, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
+                                            val plan = installmentPlans.find { it.id == tx.installment_plan_id }
+                                            if (plan != null && tx.installment_number != null) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "${tx.installment_number}/${plan.installments_count}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
+                                            }
+                                        }
                                         Text(tx.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         "R$ %.2f".format(tx.value),
                                         fontWeight = FontWeight.Bold,
@@ -661,14 +730,6 @@ fun AccountDetailDialog(
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Próximos Meses & Parcelamentos", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Projeção automática e parcelas aparecerão aqui assim que as compras parceladas (Fase 4 e 5) estiverem habilitadas.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
                 } else {
                     // Regular account: Extrato (all transactions)
                     Card(
@@ -698,11 +759,10 @@ fun AccountDetailDialog(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
+                        Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(accountTransactions) { tx ->
+                            accountTransactions.forEach { tx ->
                                 val catName = categories.find { it.id == tx.category_id }?.name
                                 val subName = subcategories.find { it.id == tx.subcategory_id }?.name
                                 Row(
@@ -710,8 +770,26 @@ fun AccountDetailDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
-                                        Text(tx.description, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(tx.description, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
+                                            val plan = installmentPlans.find { it.id == tx.installment_plan_id }
+                                            if (plan != null && tx.installment_number != null) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "${tx.installment_number}/${plan.installments_count}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
+                                            }
+                                        }
                                         Text(
                                             text = buildString {
                                                 append(tx.date)
@@ -734,6 +812,7 @@ fun AccountDetailDialog(
                                         "DESPESA" -> "-"
                                         else -> ""
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         "$sign R$ %.2f".format(tx.value),
                                         fontWeight = FontWeight.Bold,
@@ -741,6 +820,92 @@ fun AccountDetailDialog(
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // PARCELAMENTOS ATIVOS SECTION (for both CREDIT_CARD and regular accounts)
+                if (accountPlans.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Parcelamentos ativos:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    accountPlans.forEach { plan ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = plan.description,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        val categoryName = categories.find { it.id == plan.category_id }?.name
+                                        val subcategoryName = subcategories.find { it.id == plan.subcategory_id }?.name
+                                        if (categoryName != null) {
+                                            Text(
+                                                text = buildString {
+                                                    append(categoryName)
+                                                    if (subcategoryName != null) append(" / $subcategoryName")
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    
+                                    val baseValue = (plan.total_value / plan.installments_count).toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble()
+                                    Text(
+                                        text = "R$ %.2f / mês".format(baseValue),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Progress Calculation
+                                val planTxs = remember(transactions, plan) { transactions.filter { it.installment_plan_id == plan.id } }
+                                val currentMonthStr = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
+                                val paidCount = planTxs.count { it.date.take(7) <= currentMonthStr }
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$paidCount de ${plan.installments_count} pagas",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "Total: R$ %.2f".format(plan.total_value),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.height(4.dp))
+                                
+                                val progress = if (plan.installments_count > 0) paidCount.toFloat() / plan.installments_count else 0f
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                )
                             }
                         }
                     }
@@ -868,6 +1033,7 @@ fun GlobalMonthSelector(
             onDismiss = { showMonthPickerDialog = false },
             onSelected = { year, month ->
                 val newCal = Calendar.getInstance().apply {
+                    set(Calendar.DAY_OF_MONTH, 1)
                     set(Calendar.YEAR, year)
                     set(Calendar.MONTH, month)
                 }

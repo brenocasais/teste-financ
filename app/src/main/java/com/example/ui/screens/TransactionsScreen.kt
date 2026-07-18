@@ -30,13 +30,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.example.data.model.Account
 import com.example.data.model.Category
 import com.example.data.model.Subcategory
 import com.example.data.model.Transaction
+import com.example.data.model.InstallmentPlan
+import com.example.data.model.Goal
 import com.example.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.launch
 
 import android.net.Uri
 import android.graphics.Bitmap
@@ -68,6 +73,9 @@ fun TransactionsScreen(
     val accounts by viewModel.repository.getAccountsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val installmentPlans by viewModel.repository.getInstallmentPlansFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val goals by viewModel.repository.getGoalsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val highlightedTransaction by viewModel.highlightedTransaction.collectAsStateWithLifecycle()
 
     // Filter states
     val selectedMonthCalendar by viewModel.selectedMonthCalendar.collectAsStateWithLifecycle()
@@ -78,6 +86,10 @@ fun TransactionsScreen(
     // Dialog states
     var showAddDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
+
+    // Draggable FAB offsets
+    var fabOffsetX by remember { mutableStateOf(0f) }
+    var fabOffsetY by remember { mutableStateOf(0f) }
 
     // Period formatting
     val periodFormat = remember { SimpleDateFormat("MMMM yyyy", Locale("pt", "BR")) }
@@ -99,6 +111,7 @@ fun TransactionsScreen(
                 "RECEITA" -> tx.type == "RECEITA"
                 "DESPESA" -> tx.type == "DESPESA"
                 "TRANSFERENCIA" -> tx.type == "TRANSFERENCIA"
+                "META" -> tx.type == "META"
                 else -> true
             }
 
@@ -124,12 +137,20 @@ fun TransactionsScreen(
         }
     }
 
-    // Summary of filtered transactions
-    val filteredIncome = remember(filteredTransactions) {
-        filteredTransactions.filter { it.type == "RECEITA" }.sumOf { it.value }
+    val transactionsToShow = remember(filteredTransactions, highlightedTransaction) {
+        if (highlightedTransaction != null) {
+            listOf(highlightedTransaction!!)
+        } else {
+            filteredTransactions
+        }
     }
-    val filteredExpense = remember(filteredTransactions) {
-        filteredTransactions.filter { it.type == "DESPESA" }.sumOf { it.value }
+
+    // Summary of filtered transactions
+    val filteredIncome = remember(transactionsToShow) {
+        transactionsToShow.filter { it.type == "RECEITA" }.sumOf { it.value }
+    }
+    val filteredExpense = remember(transactionsToShow) {
+        transactionsToShow.filter { it.type == "DESPESA" }.sumOf { it.value }
     }
     val filteredNet = filteredIncome - filteredExpense
 
@@ -143,6 +164,48 @@ fun TransactionsScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            if (highlightedTransaction != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            IconButton(onClick = { viewModel.returnFromTransactionHighlight() }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Voltar ao Planejamento",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Filtro do Planejamento",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(onClick = { viewModel.returnFromTransactionHighlight() }) {
+                            Text("Limpar", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+
             // 2. BUSCA & CONTA FILTRO ROW
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -226,7 +289,8 @@ fun TransactionsScreen(
                 FilterTypeItem("Todas", "TODAS"),
                 FilterTypeItem("Receitas", "RECEITA"),
                 FilterTypeItem("Despesas", "DESPESA"),
-                FilterTypeItem("Transf.", "TRANSFERENCIA")
+                FilterTypeItem("Transf.", "TRANSFERENCIA"),
+                FilterTypeItem("Metas", "META")
             )
 
             Row(
@@ -296,7 +360,7 @@ fun TransactionsScreen(
 
             // 5. LISTA DE TRANSAÇÕES (Com 3 Estados)
             // Note: In Phase 2, we assume Room load completes instantly, so we check data size or state.
-            if (filteredTransactions.isEmpty()) {
+            if (transactionsToShow.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -351,14 +415,18 @@ fun TransactionsScreen(
                         .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(filteredTransactions, key = { it.id }) { tx ->
+                    items(transactionsToShow, key = { it.id }) { tx ->
                         val accOriginName = accounts.find { it.id == tx.account_id }?.name ?: "Desconhecida"
                         val accDestName = if (tx.type == "TRANSFERENCIA") {
                             accounts.find { it.id == tx.to_account_id }?.name ?: "Desconhecida"
                         } else null
 
-                        val catName = categories.find { it.id == tx.category_id }?.name
-                        val subName = subcategories.find { it.id == tx.subcategory_id }?.name
+                        val catName = if (tx.type == "META") {
+                            goals.find { it.id == tx.goal_id }?.let { "Meta: ${it.name}" }
+                        } else {
+                            categories.find { it.id == tx.category_id }?.name
+                        }
+                        val subName = if (tx.type == "META") null else subcategories.find { it.id == tx.subcategory_id }?.name
 
                         TransactionItemRow(
                             transaction = tx,
@@ -366,6 +434,7 @@ fun TransactionsScreen(
                             toAccountName = accDestName,
                             categoryName = catName,
                             subcategoryName = subName,
+                            installmentPlans = installmentPlans,
                             onItemClick = { editingTransaction = tx }
                         )
                     }
@@ -373,11 +442,19 @@ fun TransactionsScreen(
             }
         }
 
-        // FAB: Nova Transação
+        // FAB: Nova Transação (Draggable)
         FloatingActionButton(
             onClick = { showAddDialog = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .offset { androidx.compose.ui.unit.IntOffset(fabOffsetX.toInt(), fabOffsetY.toInt()) }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        fabOffsetX += dragAmount.x
+                        fabOffsetY += dragAmount.y
+                    }
+                }
                 .padding(24.dp),
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary
@@ -431,6 +508,7 @@ fun TransactionItemRow(
     toAccountName: String?,
     categoryName: String?,
     subcategoryName: String?,
+    installmentPlans: List<InstallmentPlan> = emptyList(),
     onItemClick: () -> Unit
 ) {
     Card(
@@ -456,11 +534,13 @@ fun TransactionItemRow(
                 val icon = when (transaction.type) {
                     "RECEITA" -> Icons.Default.TrendingUp
                     "DESPESA" -> Icons.Default.TrendingDown
+                    "META" -> Icons.Default.Flag
                     else -> Icons.Default.SwapHoriz
                 }
                 val iconTint = when (transaction.type) {
                     "RECEITA" -> MaterialTheme.colorScheme.primary
                     "DESPESA" -> MaterialTheme.colorScheme.error
+                    "META" -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.secondary
                 }
                 Box(
@@ -475,12 +555,59 @@ fun TransactionItemRow(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = transaction.description,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = transaction.description,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        
+                        val plan = installmentPlans.find { it.id == transaction.installment_plan_id }
+                        if (plan != null && transaction.installment_number != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "${transaction.installment_number}/${plan.installments_count}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (transaction.recurrence_rule_id != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Autorenew,
+                                        contentDescription = "Recorrente",
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        text = "Recorrente",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = buildString {
@@ -508,11 +635,13 @@ fun TransactionItemRow(
                 val sign = when (transaction.type) {
                     "RECEITA" -> "+"
                     "DESPESA" -> "-"
+                    "META" -> "-"
                     else -> ""
                 }
                 val textColor = when (transaction.type) {
                     "RECEITA" -> MaterialTheme.colorScheme.primary
                     "DESPESA" -> MaterialTheme.colorScheme.error
+                    "META" -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurface
                 }
                 Text(
@@ -561,9 +690,12 @@ fun TransactionAddEditDialog(
     categories: List<Category>,
     subcategories: List<Subcategory>,
     transactionToEdit: Transaction?,
+    preSelectedCategory: Category? = null,
+    preSelectedSubcategory: Subcategory? = null,
     onDismiss: () -> Unit
 ) {
     val isEdit = transactionToEdit != null
+    val coroutineScope = rememberCoroutineScope()
 
     // State Variables
     var type by remember { mutableStateOf(transactionToEdit?.type ?: "DESPESA") }
@@ -580,10 +712,25 @@ fun TransactionAddEditDialog(
     }
 
     var selectedCategory by remember {
-        mutableStateOf(categories.find { it.id == transactionToEdit?.category_id } ?: categories.firstOrNull())
+        mutableStateOf(categories.find { it.id == transactionToEdit?.category_id } ?: preSelectedCategory ?: categories.firstOrNull())
     }
     var selectedSubcategory by remember {
-        mutableStateOf(subcategories.find { it.id == transactionToEdit?.subcategory_id } ?: subcategories.firstOrNull())
+        mutableStateOf(subcategories.find { it.id == transactionToEdit?.subcategory_id } ?: preSelectedSubcategory ?: subcategories.firstOrNull())
+    }
+
+    val userId = viewModel.currentUserId
+    val goals by viewModel.repository.getGoalsFlow(userId).collectAsStateWithLifecycle(emptyList())
+
+    var selectedGoal by remember {
+        mutableStateOf(goals.find { it.id == transactionToEdit?.goal_id })
+    }
+
+    LaunchedEffect(goals, transactionToEdit) {
+        if (transactionToEdit?.goal_id != null && selectedGoal == null) {
+            selectedGoal = goals.find { it.id == transactionToEdit.goal_id }
+        } else if (selectedGoal == null && goals.isNotEmpty()) {
+            selectedGoal = goals.firstOrNull()
+        }
     }
 
     // Filtered Subcategories based on Category selection
@@ -621,6 +768,63 @@ fun TransactionAddEditDialog(
     // Quick categories dialogs
     var showQuickCategoryDialog by remember { mutableStateOf(false) }
     var showQuickSubcategoryDialog by remember { mutableStateOf(false) }
+
+    var isParcelado by remember { mutableStateOf(false) }
+    var installmentsCountString by remember { mutableStateOf("3") }
+
+    var isRecurrent by remember { mutableStateOf(false) }
+    var recurrenceFrequency by remember { mutableStateOf("MENSAL") }
+    var recurrenceIntervalString by remember { mutableStateOf("1") }
+    var endDateString by remember { mutableStateOf("") }
+    var hasEndDate by remember { mutableStateOf(false) }
+    var showEditChoiceDialog by remember { mutableStateOf(false) }
+
+    var endCalendar by remember {
+        mutableStateOf(
+            java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.YEAR, 1)
+            }
+        )
+    }
+    var showEndDatePicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(transactionToEdit) {
+        if (transactionToEdit != null) {
+            if (transactionToEdit.installment_plan_id != null) {
+                isParcelado = true
+                coroutineScope.launch {
+                    val plan = viewModel.repository.getInstallmentPlanById(transactionToEdit.installment_plan_id)
+                    if (plan != null) {
+                        installmentsCountString = plan.installments_count.toString()
+                    }
+                }
+            }
+            if (transactionToEdit.recurrence_rule_id != null) {
+                isRecurrent = true
+                coroutineScope.launch {
+                    val rule = viewModel.repository.getRecurrenceRuleById(transactionToEdit.recurrence_rule_id)
+                    if (rule != null) {
+                        recurrenceFrequency = rule.frequency
+                        recurrenceIntervalString = rule.frequency_interval.toString()
+                        if (rule.end_month != null) {
+                            hasEndDate = true
+                            val parts = rule.end_month.split("-")
+                            if (parts.size == 2) {
+                                endDateString = "01/${parts[1]}/${parts[0]}"
+                                val y = parts[0].toIntOrNull() ?: 2026
+                                val m = (parts[1].toIntOrNull() ?: 1) - 1
+                                endCalendar = java.util.Calendar.getInstance().apply {
+                                    set(java.util.Calendar.DAY_OF_MONTH, 1)
+                                    set(java.util.Calendar.YEAR, y)
+                                    set(java.util.Calendar.MONTH, m)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Dialog(
         onDismissRequest = { onDismiss() },
@@ -684,11 +888,12 @@ fun TransactionAddEditDialog(
                     }
                 }
 
-                // 1. TIPO DE TRANSAÇÃO (DESPESA / RECEITA / TRANSFERENCIA)
+                // 1. TIPO DE TRANSAÇÃO (DESPESA / RECEITA / TRANSFERENCIA / META)
                 val types = listOf(
                     TransactionTypeOption("Despesa", "DESPESA"),
                     TransactionTypeOption("Receita", "RECEITA"),
-                    TransactionTypeOption("Transferência", "TRANSFERENCIA")
+                    TransactionTypeOption("Transf.", "TRANSFERENCIA"),
+                    TransactionTypeOption("Meta", "META")
                 )
 
                 Row(
@@ -700,11 +905,13 @@ fun TransactionAddEditDialog(
                         val activeColor = when (opt.id) {
                             "RECEITA" -> MaterialTheme.colorScheme.primary
                             "DESPESA" -> MaterialTheme.colorScheme.error
+                            "META" -> MaterialTheme.colorScheme.tertiary
                             else -> MaterialTheme.colorScheme.secondary
                         }
                         val onActiveColor = when (opt.id) {
                             "RECEITA" -> MaterialTheme.colorScheme.onPrimary
                             "DESPESA" -> MaterialTheme.colorScheme.onError
+                            "META" -> MaterialTheme.colorScheme.onTertiary
                             else -> MaterialTheme.colorScheme.onSecondary
                         }
                         Box(
@@ -842,8 +1049,66 @@ fun TransactionAddEditDialog(
                     }
                 }
 
-                // 5. CATEGORIA / SUBCATEGORIA (Se não for transferência, em linhas diferentes com opções de criar nova no canto direito verde)
-                if (type != "TRANSFERENCIA") {
+                // 5. CATEGORIA / SUBCATEGORIA ou META (Se for tipo META, seleciona a meta)
+                if (type == "META") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Meta Destino 🎯",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        var showGoalMenu by remember { mutableStateOf(false) }
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = selectedGoal?.name ?: "Nenhuma Meta Cadastrada",
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showGoalMenu = true },
+                                enabled = false,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                    disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            Box(modifier = Modifier
+                                .matchParentSize()
+                                .clickable { showGoalMenu = true })
+
+                            DropdownMenu(
+                                expanded = showGoalMenu,
+                                onDismissRequest = { showGoalMenu = false },
+                                modifier = Modifier.fillMaxWidth(0.9f)
+                            ) {
+                                if (goals.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Nenhuma meta cadastrada") },
+                                        onClick = { showGoalMenu = false }
+                                    )
+                                } else {
+                                    goals.forEach { g ->
+                                        DropdownMenuItem(
+                                            text = { Text(g.name) },
+                                            onClick = {
+                                                selectedGoal = g
+                                                showGoalMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (type != "TRANSFERENCIA") {
                     // Category Selection
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -1010,6 +1275,275 @@ fun TransactionAddEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
+
+                // TOGGLE COMPRA PARCELADA (only for DESPESA on new transaction, or when editing an existing installment)
+                if ((!isEdit && type == "DESPESA") || (isEdit && transactionToEdit?.installment_plan_id != null)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.DateRange,
+                                    contentDescription = null,
+                                    tint = if (isParcelado) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Compra parcelada?",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Dividir o valor em parcelas mensais",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = isParcelado,
+                                onCheckedChange = { 
+                                    isParcelado = it
+                                    if (it) isRecurrent = false
+                                }
+                            )
+                        }
+
+                        if (isParcelado) {
+                            OutlinedTextField(
+                                value = installmentsCountString,
+                                onValueChange = { input ->
+                                    if (input.isEmpty() || input.all { it.isDigit() }) {
+                                        installmentsCountString = input
+                                    }
+                                },
+                                label = { Text("Número de parcelas") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+
+                            // Preview em tempo real
+                            val countInt = installmentsCountString.toIntOrNull() ?: 1
+                            val totalVal = valueString.replace(",", ".").toDoubleOrNull() ?: 0.0
+                            if (totalVal > 0.0 && countInt > 1) {
+                                val baseValue = (totalVal / countInt).toBigDecimal().setScale(2, java.math.RoundingMode.DOWN).toDouble()
+                                val totalDistributed = baseValue * (countInt - 1)
+                                val lastValue = (totalVal - totalDistributed).toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble()
+
+                                val parsedDate = try {
+                                    SimpleDateFormat("dd/MM/yyyy", Locale.US).parse(dateString) ?: Date()
+                                } catch (e: Exception) {
+                                    Date()
+                                }
+                                val previewCal = Calendar.getInstance()
+                                previewCal.time = parsedDate
+
+                                val sdfMonth = SimpleDateFormat("MMMM", Locale("pt", "BR"))
+                                val startMonthStr = sdfMonth.format(previewCal.time).replaceFirstChar { it.uppercase() }
+
+                                val endCal = previewCal.clone() as Calendar
+                                endCal.add(Calendar.MONTH, countInt - 1)
+                                val endMonthStr = sdfMonth.format(endCal.time).replaceFirstChar { it.uppercase() }
+
+                                val currencyFormatter = java.text.NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
+
+                                val previewMsg = if (baseValue == lastValue) {
+                                    "Vai gerar $countInt lançamentos de ${currencyFormatter.format(baseValue)}, de $startMonthStr a $endMonthStr."
+                                } else {
+                                    "Vai gerar ${countInt - 1} lançamentos de ${currencyFormatter.format(baseValue)} e 1 de ${currencyFormatter.format(lastValue)}, de $startMonthStr a $endMonthStr."
+                                }
+
+                                Text(
+                                    text = previewMsg,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // TOGGLE RECORRENTE (only for DESPESA or RECEITA on new transaction, or when editing an existing recurrent)
+                if ((!isEdit && (type == "DESPESA" || type == "RECEITA")) || (isEdit && transactionToEdit?.recurrence_rule_id != null)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Autorenew,
+                                    contentDescription = null,
+                                    tint = if (isRecurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "É recorrente?",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Repetir esta transação mensalmente",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = isRecurrent,
+                                onCheckedChange = { 
+                                    isRecurrent = it 
+                                    if (it) isParcelado = false
+                                }
+                            )
+                        }
+
+                        if (isRecurrent) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = recurrenceIntervalString,
+                                    onValueChange = { input ->
+                                        if (input.isEmpty() || input.all { it.isDigit() }) {
+                                            recurrenceIntervalString = input
+                                        }
+                                    },
+                                    label = { Text("A cada") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                
+                                Column(modifier = Modifier.weight(1.5f)) {
+                                    Text(
+                                        text = "Unidade", 
+                                        style = MaterialTheme.typography.labelMedium, 
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 2.dp)
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (recurrenceFrequency == "MENSAL") MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
+                                                .clickable { recurrenceFrequency = "MENSAL" },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "Meses",
+                                                color = if (recurrenceFrequency == "MENSAL") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (recurrenceFrequency == "ANUAL") MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
+                                                .clickable { recurrenceFrequency = "ANUAL" },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "Anos",
+                                                color = if (recurrenceFrequency == "ANUAL") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Definir mês de término?",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Switch(
+                                    checked = hasEndDate,
+                                    onCheckedChange = { hasEndDate = it }
+                                )
+                            }
+
+                            if (hasEndDate) {
+                                val endMonthFormatter = remember { java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale("pt", "BR")) }
+                                val displayEndMonth = remember(endCalendar) {
+                                    endMonthFormatter.format(endCalendar.time).replaceFirstChar { it.uppercase() }
+                                }
+                                OutlinedButton(
+                                    onClick = { showEndDatePicker = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Terminar em: $displayEndMonth")
+                                }
+                            }
+
+                            if (showEndDatePicker) {
+                                MonthYearPickerDialog(
+                                    currentCalendar = endCalendar,
+                                    onDismiss = { showEndDatePicker = false },
+                                    onSelected = { year, month ->
+                                        endCalendar = java.util.Calendar.getInstance().apply {
+                                            set(java.util.Calendar.DAY_OF_MONTH, 1)
+                                            set(java.util.Calendar.YEAR, year)
+                                            set(java.util.Calendar.MONTH, month)
+                                        }
+                                        showEndDatePicker = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // 7. ANEXAR COMPROVANTE (Real ou Captura de Foto com visualizador A4 e leitor de PDF)
                 val context = LocalContext.current
@@ -1273,40 +1807,108 @@ fun TransactionAddEditDialog(
                                 showErrorMsg = "A conta de origem deve ser diferente da conta de destino."
                                 return@Button
                             }
+                            if (type == "META" && selectedGoal == null) {
+                                showErrorMsg = "Selecione uma meta de destino para o lançamento."
+                                return@Button
+                            }
                             val dbDate = uiToDbDate(dateString)
                             if (dbDate == null) {
                                 showErrorMsg = "A data deve estar no formato DD/MM/AAAA (ex: 12/07/2026)."
                                 return@Button
                             }
 
-                            val tx = Transaction(
-                                id = transactionToEdit?.id ?: 0,
-                                account_id = selectedAccount!!.id,
-                                to_account_id = if (type == "TRANSFERENCIA") selectedToAccount?.id else null,
-                                category_id = if (type != "TRANSFERENCIA") selectedCategory?.id else null,
-                                subcategory_id = if (type != "TRANSFERENCIA") selectedSubcategory?.id else null,
-                                type = type,
-                                value = valDouble,
-                                description = description,
-                                date = dbDate,
-                                installment_plan_id = transactionToEdit?.installment_plan_id,
-                                installment_number = transactionToEdit?.installment_number,
-                                recurrence_rule_id = transactionToEdit?.recurrence_rule_id,
-                                is_recurrence_override = transactionToEdit?.is_recurrence_override ?: false,
-                                attachment_uri = attachmentUri,
-                                attachment_name = attachmentName,
-                                attachment_type = if (attachmentUri != null) "application/pdf" else null,
-                                synced = false,
-                                userId = viewModel.currentUserId
-                            )
-
-                            if (isEdit) {
-                                viewModel.updateTransaction(tx) {
+                            if (!isEdit && (type == "DESPESA" || type == "RECEITA") && isRecurrent) {
+                                if (selectedCategory == null) {
+                                    showErrorMsg = "Selecione uma categoria para o lançamento recorrente."
+                                    return@Button
+                                }
+                                var endMonthStr: String? = null
+                                if (hasEndDate) {
+                                    val y = endCalendar.get(java.util.Calendar.YEAR)
+                                    val m = endCalendar.get(java.util.Calendar.MONTH) + 1
+                                    endMonthStr = String.format("%04d-%02d", y, m)
+                                }
+                                val rule = com.example.data.model.RecurrenceRule(
+                                    id = 0,
+                                    account_id = selectedAccount!!.id,
+                                    category_id = selectedCategory!!.id,
+                                    subcategory_id = selectedSubcategory?.id,
+                                    description = description,
+                                    value = valDouble,
+                                    type = type,
+                                    frequency = recurrenceFrequency,
+                                    frequency_interval = recurrenceIntervalString.toIntOrNull() ?: 1,
+                                    start_date = dbDate,
+                                    end_month = endMonthStr,
+                                    active = true,
+                                    userId = viewModel.currentUserId
+                                )
+                                viewModel.createRecurrenceRule(rule) {
+                                    onDismiss()
+                                }
+                            } else if (!isEdit && type == "DESPESA" && isParcelado) {
+                                val countInt = installmentsCountString.toIntOrNull()
+                                if (countInt == null || countInt < 2) {
+                                    showErrorMsg = "Insira um número de parcelas válido maior ou igual a 2."
+                                    return@Button
+                                }
+                                if (selectedCategory == null) {
+                                    showErrorMsg = "Selecione uma categoria para o parcelamento."
+                                    return@Button
+                                }
+                                val firstMonth = dbDate.substring(0, 7) // "yyyy-MM" from "yyyy-MM-dd"
+                                val plan = InstallmentPlan(
+                                    id = 0,
+                                    account_id = selectedAccount!!.id,
+                                    category_id = selectedCategory!!.id,
+                                    subcategory_id = selectedSubcategory?.id,
+                                    description = description,
+                                    total_value = valDouble,
+                                    installments_count = countInt,
+                                    first_installment_month = firstMonth,
+                                    created_at = System.currentTimeMillis(),
+                                    userId = viewModel.currentUserId
+                                )
+                                viewModel.createInstallmentPlan(plan) {
                                     onDismiss()
                                 }
                             } else {
-                                viewModel.insertTransaction(tx) {
-                                    onDismiss()
+                                val tx = Transaction(
+                                    id = transactionToEdit?.id ?: 0,
+                                    account_id = selectedAccount!!.id,
+                                    to_account_id = if (type == "TRANSFERENCIA") selectedToAccount?.id else null,
+                                    category_id = if (type != "TRANSFERENCIA" && type != "META") selectedCategory?.id else null,
+                                    subcategory_id = if (type != "TRANSFERENCIA" && type != "META") selectedSubcategory?.id else null,
+                                    goal_id = if (type == "META") selectedGoal?.id else null,
+                                    type = type,
+                                    value = valDouble,
+                                    description = description,
+                                    date = dbDate,
+                                    installment_plan_id = transactionToEdit?.installment_plan_id,
+                                    installment_number = transactionToEdit?.installment_number,
+                                    recurrence_rule_id = transactionToEdit?.recurrence_rule_id,
+                                    is_recurrence_override = transactionToEdit?.is_recurrence_override ?: false,
+                                    attachment_uri = attachmentUri,
+                                    attachment_name = attachmentName,
+                                    attachment_type = if (attachmentUri != null) "application/pdf" else null,
+                                    synced = false,
+                                    userId = viewModel.currentUserId
+                                )
+
+                                if (isEdit) {
+                                    val isRecurrence = transactionToEdit?.recurrence_rule_id != null
+                                    val isInstallment = transactionToEdit?.installment_plan_id != null
+                                    if (isRecurrence || isInstallment) {
+                                        showEditChoiceDialog = true
+                                    } else {
+                                        viewModel.updateTransaction(tx) {
+                                            onDismiss()
+                                        }
+                                    }
+                                } else {
+                                    viewModel.insertTransaction(tx) {
+                                        onDismiss()
+                                    }
                                 }
                             }
                         },
@@ -1323,6 +1925,7 @@ fun TransactionAddEditDialog(
     // --- QUICK CREATION DIALOGS ---
     if (showQuickCategoryDialog) {
         var newCatName by remember { mutableStateOf("") }
+        var newSubName by remember { mutableStateOf("") }
         var quickCatError by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showQuickCategoryDialog = false },
@@ -1340,13 +1943,21 @@ fun TransactionAddEditDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
+                    OutlinedTextField(
+                        value = newSubName,
+                        onValueChange = { newSubName = it },
+                        label = { Text("Nome da primeira subcategoria") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newCatName.isBlank()) {
-                            quickCatError = "O nome não pode ser vazio."
+                        if (newCatName.isBlank() || newSubName.isBlank()) {
+                            quickCatError = "Categoria e subcategoria são obrigatórias."
                             return@Button
                         }
                         val cat = Category(
@@ -1355,9 +1966,18 @@ fun TransactionAddEditDialog(
                             userId = viewModel.currentUserId
                         )
                         viewModel.insertCategory(cat) { newId ->
-                            val created = Category(id = newId, envelope_group_id = null, name = newCatName.trim(), userId = viewModel.currentUserId)
-                            selectedCategory = created
-                            showQuickCategoryDialog = false
+                            val sub = Subcategory(
+                                category_id = newId,
+                                name = newSubName.trim(),
+                                userId = viewModel.currentUserId
+                            )
+                            viewModel.insertSubcategory(sub) { newSubId ->
+                                val createdCat = Category(id = newId, envelope_group_id = null, name = newCatName.trim(), userId = viewModel.currentUserId)
+                                val createdSub = Subcategory(id = newSubId, category_id = newId, name = newSubName.trim(), userId = viewModel.currentUserId)
+                                selectedCategory = createdCat
+                                selectedSubcategory = createdSub
+                                showQuickCategoryDialog = false
+                            }
                         }
                     },
                     shape = RoundedCornerShape(12.dp)
@@ -1445,22 +2065,222 @@ fun TransactionAddEditDialog(
     }
 
     if (showDeleteConfirm && isEdit) {
+        val isInstallment = transactionToEdit?.installment_plan_id != null
+        val isRecurrence = transactionToEdit?.recurrence_rule_id != null
+
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Excluir Transação") },
-            text = { Text("Tem certeza de que deseja excluir permanentemente esta transação?") },
+            text = {
+                if (isRecurrence) {
+                    Text("Esta transação é recorrente. Deseja excluir apenas esta ocorrência ou desativar a recorrência e excluir todas as ocorrências futuras?")
+                } else if (isInstallment) {
+                    Text("Esta transação é uma parcela. Deseja excluir apenas esta parcela ou excluir esta e todas as parcelas futuras desse plano?")
+                } else {
+                    Text("Tem certeza de que deseja excluir permanentemente esta transação?")
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteTransaction(transactionToEdit!!) {
-                        showDeleteConfirm = false
-                        onDismiss()
+                if (isRecurrence || isInstallment) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                showDeleteConfirm = false
+                                if (isRecurrence) {
+                                    val ruleId = transactionToEdit!!.recurrence_rule_id!!
+                                    val fromMonth = transactionToEdit.date.substring(0, 7)
+                                    viewModel.deleteRecurrenceRuleAndFuture(ruleId, viewModel.currentUserId, fromMonth) {
+                                        onDismiss()
+                                    }
+                                } else if (isInstallment) {
+                                    val planId = transactionToEdit!!.installment_plan_id!!
+                                    val installmentNum = transactionToEdit.installment_number!!
+                                    viewModel.deleteInstallmentAndFuture(planId, installmentNum, viewModel.currentUserId) {
+                                        onDismiss()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Esta e as futuras")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                showDeleteConfirm = false
+                                viewModel.deleteTransaction(transactionToEdit!!) {
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Só esta")
+                        }
                     }
-                }) {
-                    Text("Excluir", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                } else {
+                    TextButton(onClick = {
+                        viewModel.deleteTransaction(transactionToEdit!!) {
+                            showDeleteConfirm = false
+                            onDismiss()
+                        }
+                    }) {
+                        Text("Excluir", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
+                if (!isRecurrence && !isInstallment) {
+                    TextButton(onClick = { showDeleteConfirm = false }) {
+                        Text("Cancelar")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showEditChoiceDialog && isEdit) {
+        val isRecurrence = transactionToEdit?.recurrence_rule_id != null
+        val isInstallment = transactionToEdit?.installment_plan_id != null
+
+        AlertDialog(
+            onDismissRequest = { showEditChoiceDialog = false },
+            title = { Text("Opções de Edição") },
+            text = {
+                if (isRecurrence) {
+                    Text("Esta transação é recorrente. Deseja aplicar as alterações apenas a esta ocorrência ou a esta e todas as ocorrências futuras?")
+                } else if (isInstallment) {
+                    Text("Esta transação faz parte de um parcelamento. Deseja aplicar as alterações apenas a esta parcela ou a esta e todas as parcelas futuras?")
+                } else {
+                    Text("Deseja salvar as alterações?")
+                }
+            },
+            confirmButton = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            showEditChoiceDialog = false
+                            val valDouble = valueString.replace(",", ".").toDoubleOrNull() ?: 0.0
+                            val dbDate = uiToDbDate(dateString) ?: transactionToEdit!!.date
+
+                            if (isRecurrence) {
+                                coroutineScope.launch {
+                                    val ruleId = transactionToEdit!!.recurrence_rule_id!!
+                                    val rule = viewModel.repository.getRecurrenceRuleById(ruleId)
+                                    if (rule != null) {
+                                        var endMonthStr: String? = null
+                                        if (hasEndDate) {
+                                            val y = endCalendar.get(java.util.Calendar.YEAR)
+                                            val m = endCalendar.get(java.util.Calendar.MONTH) + 1
+                                            endMonthStr = String.format("%04d-%02d", y, m)
+                                        }
+                                        val updatedRule = rule.copy(
+                                            account_id = selectedAccount!!.id,
+                                            category_id = selectedCategory?.id ?: rule.category_id,
+                                            subcategory_id = selectedSubcategory?.id,
+                                            description = description,
+                                            value = valDouble,
+                                            type = type,
+                                            frequency = recurrenceFrequency,
+                                            frequency_interval = recurrenceIntervalString.toIntOrNull() ?: 1,
+                                            end_month = endMonthStr
+                                        )
+                                        val fromMonth = dbDate.substring(0, 7)
+                                        viewModel.updateRecurrenceRuleAndFuture(updatedRule, fromMonth) {
+                                            onDismiss()
+                                        }
+                                    } else {
+                                        val fallbackTx = Transaction(
+                                            id = transactionToEdit.id,
+                                            account_id = selectedAccount!!.id,
+                                            to_account_id = if (type == "TRANSFERENCIA") selectedToAccount?.id else null,
+                                            category_id = if (type != "TRANSFERENCIA") selectedCategory?.id else null,
+                                            subcategory_id = if (type != "TRANSFERENCIA") selectedSubcategory?.id else null,
+                                            type = type,
+                                            value = valDouble,
+                                            description = description,
+                                            date = dbDate,
+                                            installment_plan_id = transactionToEdit.installment_plan_id,
+                                            installment_number = transactionToEdit.installment_number,
+                                            recurrence_rule_id = transactionToEdit.recurrence_rule_id,
+                                            is_recurrence_override = transactionToEdit.is_recurrence_override,
+                                            attachment_uri = attachmentUri,
+                                            attachment_name = attachmentName,
+                                            attachment_type = if (attachmentUri != null) "application/pdf" else null,
+                                            synced = false,
+                                            userId = viewModel.currentUserId
+                                        )
+                                        viewModel.updateTransaction(fallbackTx) { onDismiss() }
+                                    }
+                                }
+                            } else if (isInstallment) {
+                                val planId = transactionToEdit!!.installment_plan_id!!
+                                val installmentNum = transactionToEdit.installment_number!!
+                                val countInt = installmentsCountString.toIntOrNull()
+                                viewModel.updateInstallmentAndFuture(
+                                    planId = planId,
+                                    fromInstallmentNumber = installmentNum,
+                                    updatedValue = valDouble,
+                                    updatedCategory = selectedCategory?.id,
+                                    updatedSubcategory = selectedSubcategory?.id,
+                                    updatedDescription = description,
+                                    updatedAccountId = selectedAccount!!.id,
+                                    userId = viewModel.currentUserId,
+                                    updatedInstallmentsCount = countInt
+                                ) {
+                                    onDismiss()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Esta e as futuras")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showEditChoiceDialog = false
+                            val valDouble = valueString.replace(",", ".").toDoubleOrNull() ?: 0.0
+                            val dbDate = uiToDbDate(dateString) ?: transactionToEdit!!.date
+                            val tx = Transaction(
+                                id = transactionToEdit!!.id,
+                                account_id = selectedAccount!!.id,
+                                to_account_id = if (type == "TRANSFERENCIA") selectedToAccount?.id else null,
+                                category_id = if (type != "TRANSFERENCIA") selectedCategory?.id else null,
+                                subcategory_id = if (type != "TRANSFERENCIA") selectedSubcategory?.id else null,
+                                type = type,
+                                value = valDouble,
+                                description = description,
+                                date = dbDate,
+                                installment_plan_id = transactionToEdit.installment_plan_id,
+                                installment_number = transactionToEdit.installment_number,
+                                recurrence_rule_id = transactionToEdit.recurrence_rule_id,
+                                is_recurrence_override = if (isRecurrence) true else transactionToEdit.is_recurrence_override,
+                                attachment_uri = attachmentUri,
+                                attachment_name = attachmentName,
+                                attachment_type = if (attachmentUri != null) "application/pdf" else null,
+                                synced = false,
+                                userId = viewModel.currentUserId
+                            )
+                            viewModel.updateTransaction(tx) {
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Só esta")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditChoiceDialog = false }) {
                     Text("Cancelar")
                 }
             }

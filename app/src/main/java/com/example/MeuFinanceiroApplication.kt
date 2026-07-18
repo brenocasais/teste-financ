@@ -32,7 +32,10 @@ class MeuFinanceiroApplication : Application() {
             subcategoryDao = database.subcategoryDao(),
             transactionDao = database.transactionDao(),
             budgetAllocationDao = database.budgetAllocationDao(),
-            allocationMovementDao = database.allocationMovementDao()
+            allocationMovementDao = database.allocationMovementDao(),
+            installmentPlanDao = database.installmentPlanDao(),
+            recurrenceRuleDao = database.recurrenceRuleDao(),
+            goalDao = database.goalDao()
         )
         userPreferences = UserPreferences(this)
         authManager = AuthManager()

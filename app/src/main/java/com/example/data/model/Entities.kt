@@ -26,7 +26,7 @@ data class EnvelopeGroup(
 @Entity(tableName = "categories")
 data class Category(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val envelope_group_id: Int?, // nullable — categoria pode ficar sem envelope
+    val envelope_group_id: Int? = null, // nullable — categoria pode ficar sem envelope
     val name: String,
     val archived: Boolean = false,
     val userId: String = ""
@@ -48,7 +48,7 @@ data class Transaction(
     val to_account_id: Int?,             // Nullable, só para TRANSFERENCIA
     val category_id: Int?,               // Nullable para transferência
     val subcategory_id: Int?,            // Nullable
-    val type: String,                    // RECEITA, DESPESA, TRANSFERENCIA
+    val type: String,                    // RECEITA, DESPESA, TRANSFERENCIA, META
     val value: Double,                   // Valor
     val description: String,
     val date: String,                    // Formato YYYY-MM-DD
@@ -60,7 +60,8 @@ data class Transaction(
     val attachment_name: String? = null, // Nome opcional do comprovante
     val attachment_type: String? = null, // Tipo opcional do comprovante
     val synced: Boolean = false,         // Controle local↔Firestore
-    val userId: String = ""
+    val userId: String = "",
+    val goal_id: Int? = null             // Nullable — associado a uma meta (Fase 8)
 )
 
 @Entity(tableName = "budget_allocations")
@@ -85,5 +86,49 @@ data class AllocationMovement(
     val moved_at: Long = System.currentTimeMillis(),
     val userId: String = ""
 )
+
+@Entity(tableName = "installment_plans")
+data class InstallmentPlan(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val account_id: Int,
+    val category_id: Int,
+    val subcategory_id: Int?,
+    val description: String,
+    val total_value: Double,
+    val installments_count: Int,
+    val first_installment_month: String, // formato YYYY-MM
+    val created_at: Long = System.currentTimeMillis(),
+    val userId: String = ""
+)
+
+@Entity(tableName = "recurrence_rules")
+data class RecurrenceRule(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val account_id: Int,
+    val category_id: Int,
+    val subcategory_id: Int?,
+    val description: String,
+    val value: Double,
+    val type: String = "DESPESA", // DESPESA ou RECEITA
+    val frequency: String, // MENSAL ou ANUAL
+    val frequency_interval: Int = 1, // de X em X meses/anos
+    val start_date: String, // formato YYYY-MM-DD
+    val end_month: String?, // nullable = sem fim definido (formato YYYY-MM)
+    val active: Boolean = true,
+    val userId: String = ""
+)
+
+@Entity(tableName = "goals")
+data class Goal(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val target_value: Double,
+    val start_date: String = "", // formato YYYY-MM (Fase 8)
+    val deadline: String,        // formato YYYY-MM (Fase 8)
+    val color: Int,
+    val archived: Boolean = false,
+    val userId: String = ""
+)
+
 
 

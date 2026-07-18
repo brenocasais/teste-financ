@@ -14,6 +14,7 @@ import com.example.data.model.AllocationMovement
 import com.example.data.model.InstallmentPlan
 import com.example.data.model.RecurrenceRule
 import com.example.data.model.Goal
+import com.example.data.model.NotificationLog
 
 @Database(
     entities = [
@@ -26,9 +27,10 @@ import com.example.data.model.Goal
         AllocationMovement::class,
         InstallmentPlan::class,
         RecurrenceRule::class,
-        Goal::class
+        Goal::class,
+        NotificationLog::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,6 +44,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun installmentPlanDao(): InstallmentPlanDao
     abstract fun recurrenceRuleDao(): RecurrenceRuleDao
     abstract fun goalDao(): GoalDao
+    abstract fun notificationLogDao(): NotificationLogDao
 
     companion object {
         @Volatile

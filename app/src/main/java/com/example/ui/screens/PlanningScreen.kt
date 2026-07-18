@@ -224,10 +224,6 @@ fun PlanningScreen(viewModel: MainViewModel) {
         }
     }
 
-    val totalEconomizadoPrevMonth by remember(prevSobraMap) {
-        derivedStateOf { prevSobraMap.values.filter { it > 0.0 }.sum() }
-    }
-
     val realEconomizadoPrevMonth by remember(prevSobraMap) {
         derivedStateOf {
             val economizado = prevSobraMap.values.filter { it > 0.0 }.sum()
@@ -239,8 +235,8 @@ fun PlanningScreen(viewModel: MainViewModel) {
     // Current month Ready to Assign computation (Part 1: single source of truth via Flow)
     val prontoParaAtribuir by viewModel.prontoParaAtribuirFlow.collectAsStateWithLifecycle()
 
-    val economizedText = remember(totalEconomizadoPrevMonth, currencyFormatter) {
-        currencyFormatter.format(totalEconomizadoPrevMonth)
+    val saldoPrevMonthText = remember(realEconomizadoPrevMonth, currencyFormatter) {
+        currencyFormatter.format(realEconomizadoPrevMonth)
     }
 
     val showClosureBanner = hasAllocationInPrevMonth
@@ -495,7 +491,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                     MonthClosureBanner(
                         monthName = formatMonthPortuguese(prevMonthStr),
                         isReviewed = isPrevMonthReviewed,
-                        economizedText = economizedText,
+                        saldoPrevMonthText = saldoPrevMonthText,
                         onClick = { showMonthClosureScreen = true }
                     )
                 }
@@ -3281,7 +3277,7 @@ fun ClosureItemRow(
 fun MonthClosureBanner(
     monthName: String,
     isReviewed: Boolean,
-    economizedText: String,
+    saldoPrevMonthText: String,
     onClick: () -> Unit
 ) {
     Card(
@@ -3328,7 +3324,7 @@ fun MonthClosureBanner(
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
                     Text(
-                        text = "Economizado no mês anterior: $economizedText. Clique para editar ou revisar.",
+                        text = "Saldo do mês anterior: $saldoPrevMonthText. Clique para editar ou revisar.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
                     )

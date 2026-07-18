@@ -24,7 +24,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as MeuFinanceiroApplication
     val repository: FinanceRepository = app.repository
-    private val userPreferences: UserPreferences = app.userPreferences
+    val userPreferences: UserPreferences = app.userPreferences
     val authManager: AuthManager = app.authManager
 
     // --- Preferences states ---
@@ -293,7 +293,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeHistoryDialog = MutableStateFlow<Pair<Category, Subcategory?>?>(null)
     val activeHistoryDialog = _activeHistoryDialog.asStateFlow()
 
+    val selectedAccountForDetail = MutableStateFlow<com.example.data.model.Account?>(null)
+    val transactionSearchQuery = MutableStateFlow("")
+
     var previousTabBeforeHighlight: Int? = null
+
+    fun triggerNotificationCheck() {
+        val userId = currentUserId
+        if (userId.isNotBlank()) {
+            viewModelScope.launch {
+                com.example.data.notification.NotificationTriggerManager.checkAndTriggerNotifications(
+                    context = getApplication(),
+                    repository = repository,
+                    userPreferences = userPreferences,
+                    userId = userId
+                )
+            }
+        }
+    }
+
+    fun handleDeepLink(type: String, referenceId: String?, referenceMonth: String?) {
+        viewModelScope.launch {
+            when (type) {
+                "CATEGORIA_80", "CATEGORIA_100" -> {
+                    _navigateToTab.emit(2) // Planning tab
+                }
+                "FATURA_VENCENDO" -> {
+                    _navigateToTab.emit(0) // Início tab
+                    val accountId = referenceId?.toIntOrNull()
+                    if (accountId != null) {
+                        val accounts = repository.getAllAccounts(currentUserId)
+                        val account = accounts.find { it.id == accountId }
+                        if (account != null) {
+                            selectedAccountForDetail.value = account
+                        }
+                    }
+                }
+                "PARCELA_VENCENDO" -> {
+                    _navigateToTab.emit(1) // Transações tab
+                    val planId = referenceId?.toIntOrNull()
+                    if (planId != null) {
+                        val plan = repository.getInstallmentPlanById(planId)
+                        if (plan != null) {
+                            transactionSearchQuery.value = plan.description
+                        }
+                    } else {
+                        transactionSearchQuery.value = ""
+                    }
+                }
+                "META_BATIDA" -> {
+                    _navigateToTab.emit(4) // Metas tab
+                }
+                "REVISAO_SEMANAL" -> {
+                    _navigateToTab.emit(0) // Início tab
+                }
+            }
+        }
+    }
 
     fun navigateToTransaction(tx: Transaction) {
         _highlightedTransaction.value = tx
@@ -328,6 +384,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertTransaction(transaction)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -336,6 +393,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.updateTransaction(transaction)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -344,6 +402,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteTransaction(transaction)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -464,6 +523,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertGoal(goal)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -472,6 +532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.updateGoal(goal)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -480,6 +541,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteGoal(goal)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -489,6 +551,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.insertAllocationMovement(movement)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -497,6 +560,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.updateAllocationMovement(movement)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }
@@ -505,6 +569,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteAllocationMovement(movement)
             triggerPush()
+            triggerNotificationCheck()
             onComplete()
         }
     }

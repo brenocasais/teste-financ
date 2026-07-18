@@ -20,6 +20,11 @@ import com.example.ui.screens.OnboardingScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
 
+import android.os.Build
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import com.example.data.notification.NotificationTriggerManager
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels {
@@ -29,6 +34,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Request POST_NOTIFICATIONS permission for Android 13+ (API 33+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permission = android.Manifest.permission.POST_NOTIFICATIONS
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                androidx.core.app.ActivityCompat.requestPermissions(this, arrayOf(permission), 101)
+            }
+        }
+
+        handleIntent(intent)
+
         setContent {
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -69,5 +85,34 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val userId = viewModel.currentUserId
+        if (userId.isNotBlank()) {
+            val app = application as MeuFinanceiroApplication
+            lifecycleScope.launch {
+                NotificationTriggerManager.checkAndTriggerNotifications(
+                    context = this@MainActivity,
+                    repository = app.repository,
+                    userPreferences = app.userPreferences,
+                    userId = userId
+                )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: android.content.Intent?) {
+        val type = intent?.getStringExtra("notification_type") ?: return
+        val referenceId = intent.getStringExtra("reference_id")
+        val referenceMonth = intent.getStringExtra("reference_month")
+        viewModel.handleDeepLink(type, referenceId, referenceMonth)
     }
 }

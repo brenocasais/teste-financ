@@ -79,7 +79,13 @@ fun TransactionsScreen(
 
     // Filter states
     val selectedMonthCalendar by viewModel.selectedMonthCalendar.collectAsStateWithLifecycle()
+    val transactionSearchQueryVM by viewModel.transactionSearchQuery.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(transactionSearchQueryVM) {
+        searchQuery = transactionSearchQueryVM
+    }
+
     var selectedTypeFilter by remember { mutableStateOf("TODAS") } // TODAS, RECEITA, DESPESA, TRANSFERENCIA
     var selectedAccountFilter by remember { mutableStateOf<Account?>(null) } // null means "Todas as Contas"
 
@@ -214,12 +220,18 @@ fun TransactionsScreen(
             ) {
                 OutlinedTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = {
+                        searchQuery = it
+                        viewModel.transactionSearchQuery.value = it
+                    },
                     placeholder = { Text("Buscar transação...", fontSize = 14.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
+                            IconButton(onClick = {
+                                searchQuery = ""
+                                viewModel.transactionSearchQuery.value = ""
+                            }) {
                                 Icon(Icons.Default.Clear, contentDescription = "Limpar busca")
                             }
                         }

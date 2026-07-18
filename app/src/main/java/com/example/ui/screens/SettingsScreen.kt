@@ -117,6 +117,13 @@ fun SettingsScreen(
             )
         }
 
+        // 11.6 NOTIFICATIONS SETTINGS
+        item {
+            NotificationsCard(
+                viewModel = viewModel
+            )
+        }
+
         // 11.9 SYNC SETTINGS
         item {
             SyncSettingsCard(
@@ -1000,5 +1007,233 @@ fun SubcategoryFormDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun NotificationsCard(
+    viewModel: MainViewModel
+) {
+    val scope = rememberCoroutineScope()
+    
+    val notifyLimits by viewModel.userPreferences.notifyLimitsFlow.collectAsStateWithLifecycle(initialValue = true)
+    val notifyCreditCard by viewModel.userPreferences.notifyCreditCardFlow.collectAsStateWithLifecycle(initialValue = true)
+    val notifyInstallment by viewModel.userPreferences.notifyInstallmentFlow.collectAsStateWithLifecycle(initialValue = true)
+    val notifyGoal by viewModel.userPreferences.notifyGoalFlow.collectAsStateWithLifecycle(initialValue = true)
+    val notifyWeeklyReview by viewModel.userPreferences.notifyWeeklyReviewFlow.collectAsStateWithLifecycle(initialValue = true)
+    
+    val creditCardDaysBefore by viewModel.userPreferences.creditCardDaysBeforeFlow.collectAsStateWithLifecycle(initialValue = 3)
+    val weeklyReviewDay by viewModel.userPreferences.weeklyReviewDayFlow.collectAsStateWithLifecycle(initialValue = 1)
+    val weeklyReviewTime by viewModel.userPreferences.weeklyReviewTimeFlow.collectAsStateWithLifecycle(initialValue = "20:00")
+
+    var cardDaysBeforeInput by remember(creditCardDaysBefore) { mutableStateOf(creditCardDaysBefore.toString()) }
+    var weeklyReviewTimeInput by remember(weeklyReviewTime) { mutableStateOf(weeklyReviewTime) }
+    var dayDropdownExpanded by remember { mutableStateOf(false) }
+
+    val daysOfWeek = listOf(
+        "Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"
+    )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder(enabled = true)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Notificações e Alertas 🔔",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Text(
+                text = "Gerencie como e quando deseja receber alertas e notificações em tempo real.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // 1. Limits toggle
+            NotificationToggleRow(
+                title = "Limites de Categorias (80% / 100%)",
+                subtitle = "Alerta quando uma categoria atinge ou ultrapassa os limites planejados",
+                checked = notifyLimits,
+                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyLimits(it) } }
+            )
+
+            // 2. Credit card toggle
+            NotificationToggleRow(
+                title = "Faturas de Cartão",
+                subtitle = "Alerta quando uma fatura de cartão está próxima do vencimento",
+                checked = notifyCreditCard,
+                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyCreditCard(it) } }
+            )
+
+            if (notifyCreditCard) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Dias antes do vencimento:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    OutlinedTextField(
+                        value = cardDaysBeforeInput,
+                        onValueChange = { newValue ->
+                            cardDaysBeforeInput = newValue
+                            val parsed = newValue.toIntOrNull()
+                            if (parsed != null && parsed > 0) {
+                                scope.launch { viewModel.userPreferences.setCreditCardDaysBefore(parsed) }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.width(80.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            // 3. Installments toggle
+            NotificationToggleRow(
+                title = "Parcelas a Vencer",
+                subtitle = "Notifica parcelas que vencem nos próximos 3 dias",
+                checked = notifyInstallment,
+                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyInstallment(it) } }
+            )
+
+            // 4. Goals toggle
+            NotificationToggleRow(
+                title = "Metas Alcançadas",
+                subtitle = "Parabeniza você instantaneamente ao atingir ou superar uma meta",
+                checked = notifyGoal,
+                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyGoal(it) } }
+            )
+
+            // 5. Weekly Review toggle
+            NotificationToggleRow(
+                title = "Revisão Semanal",
+                subtitle = "Resumo semanal contendo estatísticas de categorias e Pronto para Atribuir",
+                checked = notifyWeeklyReview,
+                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyWeeklyReview(it) } }
+            )
+
+            if (notifyWeeklyReview) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Day selection
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Dia da Semana:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Box {
+                            val currentDayName = daysOfWeek.getOrNull(weeklyReviewDay - 1) ?: "Selecione"
+                            Button(
+                                onClick = { dayDropdownExpanded = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                            ) {
+                                Text(currentDayName)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = dayDropdownExpanded,
+                                onDismissRequest = { dayDropdownExpanded = false }
+                            ) {
+                                daysOfWeek.forEachIndexed { index, day ->
+                                    DropdownMenuItem(
+                                        text = { Text(day) },
+                                        onClick = {
+                                            scope.launch { viewModel.userPreferences.setWeeklyReviewDay(index + 1) }
+                                            dayDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Time selection
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Horário (HH:mm):",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        OutlinedTextField(
+                            value = weeklyReviewTimeInput,
+                            onValueChange = { newValue ->
+                                weeklyReviewTimeInput = newValue
+                                if (newValue.matches(Regex("^([01]?[0-9]|2[0-3]):[0-5][0-9]$"))) {
+                                    scope.launch { viewModel.userPreferences.setWeeklyReviewTime(newValue) }
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.width(100.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            placeholder = { Text("20:00") }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.testTag("toggle_${title.replace(" ", "_").lowercase()}")
+        )
     }
 }

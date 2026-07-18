@@ -130,5 +130,15 @@ data class Goal(
     val userId: String = ""
 )
 
+@Entity(tableName = "notification_logs")
+data class NotificationLog(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val type: String,
+    val reference_id: String?,
+    val reference_month: String?,
+    val sent_at: Long = System.currentTimeMillis(),
+    val userId: String = ""
+)
+
 
 

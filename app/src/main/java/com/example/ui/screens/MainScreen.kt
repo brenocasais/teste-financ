@@ -158,7 +158,14 @@ fun DashboardTab(
     val allocationMovements by viewModel.repository.getAllocationMovementsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val goals by viewModel.repository.getGoalsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val selectedAccountForDetailVM by viewModel.selectedAccountForDetail.collectAsStateWithLifecycle()
     var selectedAccountForDetail by remember { mutableStateOf<Account?>(null) }
+
+    LaunchedEffect(selectedAccountForDetailVM) {
+        if (selectedAccountForDetailVM != null) {
+            selectedAccountForDetail = selectedAccountForDetailVM
+        }
+    }
 
     val totalBalance = remember(accounts) {
         accounts.sumOf { it.initial_balance }
@@ -447,7 +454,10 @@ fun DashboardTab(
         AccountDetailDialog(
             account = selectedAccountForDetail!!,
             viewModel = viewModel,
-            onDismiss = { selectedAccountForDetail = null }
+            onDismiss = {
+                selectedAccountForDetail = null
+                viewModel.selectedAccountForDetail.value = null
+            }
         )
     }
 }

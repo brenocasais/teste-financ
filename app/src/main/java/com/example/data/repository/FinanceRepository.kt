@@ -19,8 +19,16 @@ class FinanceRepository(
     private val allocationMovementDao: AllocationMovementDao,
     private val installmentPlanDao: InstallmentPlanDao,
     private val recurrenceRuleDao: RecurrenceRuleDao,
-    private val goalDao: GoalDao
+    private val goalDao: GoalDao,
+    private val notificationLogDao: NotificationLogDao
 ) {
+    // --- NOTIFICATION LOGS ---
+    suspend fun getNotificationLog(userId: String, type: String, referenceId: String?, referenceMonth: String?): NotificationLog? =
+        notificationLogDao.getLog(userId, type, referenceId, referenceMonth)
+
+    suspend fun insertNotificationLog(log: NotificationLog) =
+        notificationLogDao.insert(log)
+
     // --- RECURRENCE RULES ---
     fun getRecurrenceRulesFlow(userId: String): Flow<List<RecurrenceRule>> = recurrenceRuleDao.getRecurrenceRulesFlow(userId)
     suspend fun getAllRecurrenceRules(userId: String): List<RecurrenceRule> = recurrenceRuleDao.getAllRecurrenceRules(userId)

@@ -11,6 +11,7 @@ import com.example.data.model.AllocationMovement
 import com.example.data.model.InstallmentPlan
 import com.example.data.model.RecurrenceRule
 import com.example.data.model.Goal
+import com.example.data.model.NotificationLog
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -273,6 +274,21 @@ interface GoalDao {
     suspend fun delete(goal: Goal)
 
     @Query("DELETE FROM goals WHERE userId = :userId")
+    suspend fun clearAll(userId: String)
+}
+
+@Dao
+interface NotificationLogDao {
+    @Query("SELECT * FROM notification_logs WHERE userId = :userId")
+    suspend fun getAllLogs(userId: String): List<NotificationLog>
+
+    @Query("SELECT * FROM notification_logs WHERE userId = :userId AND type = :type AND reference_id = :referenceId AND reference_month = :referenceMonth LIMIT 1")
+    suspend fun getLog(userId: String, type: String, referenceId: String?, referenceMonth: String?): NotificationLog?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(log: NotificationLog): Long
+
+    @Query("DELETE FROM notification_logs WHERE userId = :userId")
     suspend fun clearAll(userId: String)
 }
 

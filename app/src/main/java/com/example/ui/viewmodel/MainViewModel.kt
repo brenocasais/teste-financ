@@ -138,15 +138,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             account.initial_balance + creditos - debitos
         }
 
-        // 2. Disponível of all BudgetAllocations in monthStr
-        val allocsInMonth = budgetAllocations.filter { it.month == monthStr }
+        // 2. Disponível of all BudgetAllocations up to monthStr (accumulated)
+        val allocsInMonth = budgetAllocations.filter { it.month <= monthStr }
         val totalDisponivel = allocsInMonth.sumOf { alloc ->
             val alocado = allocationMovements.filter { it.dest_budget_allocation_id == alloc.id }.sumOf { it.amount } -
                           allocationMovements.filter { it.source_budget_allocation_id == alloc.id }.sumOf { it.amount }
 
             val gasto = transactions.filter {
                 it.type == "DESPESA" &&
-                it.date.startsWith(monthStr) &&
+                it.date.startsWith(alloc.month) &&
                 it.category_id == alloc.category_id &&
                 it.subcategory_id == alloc.subcategory_id
             }.sumOf { it.value }

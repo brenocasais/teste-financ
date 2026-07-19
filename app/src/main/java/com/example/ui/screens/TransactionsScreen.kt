@@ -2099,7 +2099,7 @@ fun TransactionAddEditDialog(
                                 showDeleteConfirm = false
                                 if (isRecurrence) {
                                     val ruleId = transactionToEdit!!.recurrence_rule_id!!
-                                    val fromMonth = transactionToEdit.date.substring(0, 7)
+                                    val fromMonth = if (transactionToEdit.date.length >= 7) transactionToEdit.date.substring(0, 7) else ""
                                     viewModel.deleteRecurrenceRuleAndFuture(ruleId, viewModel.currentUserId, fromMonth) {
                                         onDismiss()
                                     }
@@ -2198,7 +2198,7 @@ fun TransactionAddEditDialog(
                                             frequency_interval = recurrenceIntervalString.toIntOrNull() ?: 1,
                                             end_month = endMonthStr
                                         )
-                                        val fromMonth = dbDate.substring(0, 7)
+                                        val fromMonth = if (dbDate.length >= 7) dbDate.substring(0, 7) else ""
                                         viewModel.updateRecurrenceRuleAndFuture(updatedRule, fromMonth) {
                                             onDismiss()
                                         }

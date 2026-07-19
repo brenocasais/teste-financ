@@ -61,17 +61,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Request POST_NOTIFICATIONS permission for Android 13+ (API 33+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permission = android.Manifest.permission.POST_NOTIFICATIONS
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissionLauncher.launch(permission)
-            }
-        }
-
         handleIntent(intent)
 
         setContent {
+            // Request POST_NOTIFICATIONS permission for Android 13+ (API 33+) safely on launch
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val permission = android.Manifest.permission.POST_NOTIFICATIONS
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(this@MainActivity, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        requestPermissionLauncher.launch(permission)
+                    }
+                }
+            }
+
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             val authState by viewModel.authState.collectAsStateWithLifecycle()
             val onboardingCompleted by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
@@ -119,12 +121,16 @@ class MainActivity : ComponentActivity() {
         if (userId.isNotBlank()) {
             val app = application as MeuFinanceiroApplication
             lifecycleScope.launch {
-                NotificationTriggerManager.checkAndTriggerNotifications(
-                    context = this@MainActivity,
-                    repository = app.repository,
-                    userPreferences = app.userPreferences,
-                    userId = userId
-                )
+                try {
+                    NotificationTriggerManager.checkAndTriggerNotifications(
+                        context = this@MainActivity,
+                        repository = app.repository,
+                        userPreferences = app.userPreferences,
+                        userId = userId
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }

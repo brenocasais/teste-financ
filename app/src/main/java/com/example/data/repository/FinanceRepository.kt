@@ -66,6 +66,7 @@ class FinanceRepository(
             .filter { it.recurrence_rule_id == rule.id }
             
         // We extract the exact day of month from start_date
+        if (rule.start_date.length < 10) return
         val startYear = rule.start_date.substring(0, 4).toIntOrNull() ?: 2026
         val startMonth = rule.start_date.substring(5, 7).toIntOrNull() ?: 1
         val day = rule.start_date.substring(8, 10).toIntOrNull() ?: 1

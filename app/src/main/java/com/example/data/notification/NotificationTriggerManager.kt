@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import android.Manifest
 import com.example.MainActivity
 import com.example.data.model.*
 import com.example.data.pref.UserPreferences
@@ -41,39 +43,50 @@ object NotificationHelper {
         referenceId: String?,
         referenceMonth: String?
     ) {
-        createNotificationChannel(context)
+        try {
+            createNotificationChannel(context)
 
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("notification_type", type)
-            putExtra("reference_id", referenceId)
-            putExtra("reference_month", referenceMonth)
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("notification_type", type)
+                putExtra("reference_id", referenceId)
+                putExtra("reference_month", referenceMonth)
+            }
+
+            val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                id,
+                intent,
+                pendingIntentFlags
+            )
+
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val permission = Manifest.permission.POST_NOTIFICATIONS
+                if (ContextCompat.checkSelfPermission(context, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return
+                }
+            }
+
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(id, builder.build())
+        } catch (e: Throwable) {
+            e.printStackTrace()
         }
-
-        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            id,
-            intent,
-            pendingIntentFlags
-        )
-
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(id, builder.build())
     }
 }
 
@@ -87,7 +100,8 @@ object NotificationTriggerManager {
     ) {
         if (userId.isBlank()) return
 
-        val notifyLimits = userPreferences.notifyLimitsFlow.first()
+        try {
+            val notifyLimits = userPreferences.notifyLimitsFlow.first()
         val notifyCreditCard = userPreferences.notifyCreditCardFlow.first()
         val notifyInstallment = userPreferences.notifyInstallmentFlow.first()
         val notifyGoal = userPreferences.notifyGoalFlow.first()
@@ -114,7 +128,7 @@ object NotificationTriggerManager {
             val catSpent = mutableMapOf<Int, Double>()
 
             // spent up to current month (despesa)
-            val allExpenses = transactions.filter { it.type == "DESPESA" && it.date.substring(0, 7) <= currentMonthStr }
+            val allExpenses = transactions.filter { it.type == "DESPESA" && it.date.length >= 7 && it.date.substring(0, 7) <= currentMonthStr }
             for (tx in allExpenses) {
                 val catId = tx.category_id ?: continue
                 val subId = tx.subcategory_id
@@ -303,7 +317,7 @@ object NotificationTriggerManager {
                         val catAllocated = mutableMapOf<Int, Double>()
                         val catSpent = mutableMapOf<Int, Double>()
 
-                        val allExpenses = transactions.filter { it.type == "DESPESA" && it.date.substring(0, 7) <= currentMonthStr }
+                        val allExpenses = transactions.filter { it.type == "DESPESA" && it.date.length >= 7 && it.date.substring(0, 7) <= currentMonthStr }
                         for (tx in allExpenses) {
                             val catId = tx.category_id ?: continue
                             val subId = tx.subcategory_id
@@ -386,6 +400,9 @@ object NotificationTriggerManager {
                     }
                 }
             }
+        }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

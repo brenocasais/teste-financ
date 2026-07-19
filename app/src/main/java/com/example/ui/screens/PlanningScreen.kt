@@ -307,7 +307,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                 else 0.0
                             }
                             val txsVal = transactions.filter {
-                                it.type == "META" && it.goal_id == g.id && it.date.substring(0, 7) <= lastClosedMonth
+                                it.type == "META" && it.goal_id == g.id && it.date.length >= 7 && it.date.substring(0, 7) <= lastClosedMonth
                             }.sumOf { it.value }
                             movesVal + txsVal
                         } else {
@@ -329,7 +329,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                 else 0.0
                             }
                             val txsVal = transactions.filter {
-                                it.type == "META" && it.goal_id == g.id && it.date.substring(0, 7) <= lastClosedMonth
+                                it.type == "META" && it.goal_id == g.id && it.date.length >= 7 && it.date.substring(0, 7) <= lastClosedMonth
                             }.sumOf { it.value }
                             movesVal + txsVal
                         } else {

@@ -15,7 +15,7 @@ android {
 
   defaultConfig {
     applicationId = "com.aistudio.meufinanceiro.kyzwsp"
-    minSdk = 24
+    minSdk = 26
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
@@ -47,6 +47,20 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
+  }
+  packaging {
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "META-INF/DEPENDENCIES"
+      excludes += "META-INF/LICENSE"
+      excludes += "META-INF/LICENSE.txt"
+      excludes += "META-INF/license.txt"
+      excludes += "META-INF/NOTICE"
+      excludes += "META-INF/NOTICE.txt"
+      excludes += "META-INF/notice.txt"
+      excludes += "META-INF/ASL2.0"
+      excludes += "META-INF/INDEX.LIST"
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -97,6 +111,9 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
+  implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+  implementation("org.apache.poi:poi:5.2.5")
+  implementation("org.apache.poi:poi-ooxml:5.2.5")
   // Uncomment to use Firestore:
   implementation(libs.firebase.firestore)
 

@@ -740,6 +740,73 @@ fun BackupSettingsCard(
     val scope = rememberCoroutineScope()
     val userId = viewModel.currentUserId
 
+    val currentMonth = remember {
+        java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
+    }
+
+    var startMonth by remember { mutableStateOf(currentMonth) }
+    var endMonth by remember { mutableStateOf(currentMonth) }
+    var showStartMonthPicker by remember { mutableStateOf(false) }
+    var showEndMonthPicker by remember { mutableStateOf(false) }
+
+    var pdfStartMonth by remember { mutableStateOf(currentMonth) }
+    var pdfEndMonth by remember { mutableStateOf(currentMonth) }
+    var showPdfStartMonthPicker by remember { mutableStateOf(false) }
+    var showPdfEndMonthPicker by remember { mutableStateOf(false) }
+
+    var selectedCategoryForPdf by remember { mutableStateOf<com.example.data.model.Category?>(null) }
+    var selectedSubcategoryForPdf by remember { mutableStateOf<com.example.data.model.Subcategory?>(null) }
+    var showCategoryDropdown by remember { mutableStateOf(false) }
+    var showSubcategoryDropdown by remember { mutableStateOf(false) }
+
+    val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(emptyList())
+    val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(emptyList())
+
+    // Month picker dialogs
+    if (showStartMonthPicker) {
+        MonthYearPickerDialog(
+            initialMonth = startMonth,
+            onDismiss = { showStartMonthPicker = false },
+            onConfirm = {
+                startMonth = it
+                showStartMonthPicker = false
+            }
+        )
+    }
+
+    if (showEndMonthPicker) {
+        MonthYearPickerDialog(
+            initialMonth = endMonth,
+            onDismiss = { showEndMonthPicker = false },
+            onConfirm = {
+                endMonth = it
+                showEndMonthPicker = false
+            }
+        )
+    }
+
+    if (showPdfStartMonthPicker) {
+        MonthYearPickerDialog(
+            initialMonth = pdfStartMonth,
+            onDismiss = { showPdfStartMonthPicker = false },
+            onConfirm = {
+                pdfStartMonth = it
+                showPdfStartMonthPicker = false
+            }
+        )
+    }
+
+    if (showPdfEndMonthPicker) {
+        MonthYearPickerDialog(
+            initialMonth = pdfEndMonth,
+            onDismiss = { showPdfEndMonthPicker = false },
+            onConfirm = {
+                pdfEndMonth = it
+                showPdfEndMonthPicker = false
+            }
+        )
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -767,7 +834,7 @@ fun BackupSettingsCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Cópia de segurança independente",
+                            text = "Cópia de segurança e extratos",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -786,6 +853,13 @@ fun BackupSettingsCard(
                         .padding(top = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Text(
+                        text = "Backup Completo (JSON)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
                     Text(
                         text = "Gere uma cópia em formato JSON contendo absolutamente todos os seus dados locais (Contas, Transações, Envelopes, Alocações, Planejamentos, Metas, etc.). Você pode salvar este arquivo de forma segura ou compartilhá-lo.",
                         style = MaterialTheme.typography.bodySmall,
@@ -837,6 +911,522 @@ fun BackupSettingsCard(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Exportar todos os dados (JSON)")
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // --- EXPORT EXTRATO ---
+                    Text(
+                        text = "Exportar Extrato (Excel / CSV)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Text(
+                        text = "Selecione o período do extrato para exportar as transações e o resumo financeiro por categoria.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showStartMonthPicker = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Mês Inicial", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    text = com.example.utils.ExportHelper.formatMonthPtBr(startMonth),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showEndMonthPicker = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Mês Final", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    text = com.example.utils.ExportHelper.formatMonthPtBr(endMonth),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        val accounts = viewModel.repository.getAllAccounts(userId)
+                                        val transactions = viewModel.repository.getAllTransactions(userId)
+                                        val budgetAllocations = viewModel.repository.getAllBudgetAllocations(userId)
+                                        val allocationMovements = viewModel.repository.getAllAllocationMovements(userId)
+                                        val categories = viewModel.repository.getAllCategories(userId)
+                                        val subcategories = viewModel.repository.getAllSubcategories(userId)
+
+                                        val file = com.example.utils.ExportHelper.exportToExcel(
+                                            context = context,
+                                            startMonth = startMonth,
+                                            endMonth = endMonth,
+                                            accounts = accounts,
+                                            transactions = transactions,
+                                            budgetAllocations = budgetAllocations,
+                                            allocationMovements = allocationMovements,
+                                            categories = categories,
+                                            subcategories = subcategories
+                                        )
+
+                                        if (file != null) {
+                                            val authority = "${context.packageName}.fileprovider"
+                                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                context,
+                                                authority,
+                                                file
+                                            )
+
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Extrato Excel")
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+
+                                            context.startActivity(
+                                                android.content.Intent.createChooser(
+                                                    shareIntent,
+                                                    "Compartilhar Extrato (Excel)"
+                                                )
+                                            )
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TableView,
+                                contentDescription = null
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Excel", maxLines = 1)
+                        }
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        val accounts = viewModel.repository.getAllAccounts(userId)
+                                        val transactions = viewModel.repository.getAllTransactions(userId)
+                                        val categories = viewModel.repository.getAllCategories(userId)
+                                        val subcategories = viewModel.repository.getAllSubcategories(userId)
+
+                                        val file = com.example.utils.ExportHelper.exportToCsv(
+                                            context = context,
+                                            startMonth = startMonth,
+                                            endMonth = endMonth,
+                                            accounts = accounts,
+                                            transactions = transactions,
+                                            categories = categories,
+                                            subcategories = subcategories
+                                        )
+
+                                        if (file != null) {
+                                            val authority = "${context.packageName}.fileprovider"
+                                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                context,
+                                                authority,
+                                                file
+                                            )
+
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "text/csv"
+                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Extrato CSV")
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+
+                                            context.startActivity(
+                                                android.content.Intent.createChooser(
+                                                    shareIntent,
+                                                    "Compartilhar Extrato (CSV)"
+                                                )
+                                            )
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FileDownload,
+                                contentDescription = null
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("CSV", maxLines = 1)
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // --- EXPORT COMPROVANTES ---
+                    Text(
+                        text = "Exportar Comprovantes (PDF)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Text(
+                        text = "Gere um arquivo PDF mesclando todas as fotos ou PDFs de comprovantes anexados às suas transações filtradas por categoria e período.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showPdfStartMonthPicker = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Mês Inicial", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    text = com.example.utils.ExportHelper.formatMonthPtBr(pdfStartMonth),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showPdfEndMonthPicker = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Mês Final", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    text = com.example.utils.ExportHelper.formatMonthPtBr(pdfEndMonth),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Category dropdown button
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { showCategoryDropdown = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = selectedCategoryForPdf?.name ?: "Todas as Categorias",
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showCategoryDropdown,
+                            onDismissRequest = { showCategoryDropdown = false },
+                            modifier = Modifier.fillMaxWidth(0.85f)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Todas as Categorias") },
+                                onClick = {
+                                    selectedCategoryForPdf = null
+                                    selectedSubcategoryForPdf = null
+                                    showCategoryDropdown = false
+                                }
+                            )
+                            categories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name) },
+                                    onClick = {
+                                        selectedCategoryForPdf = cat
+                                        selectedSubcategoryForPdf = null
+                                        showCategoryDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Subcategory dropdown button
+                    if (selectedCategoryForPdf != null) {
+                        val filteredSubs = subcategories.filter { it.category_id == selectedCategoryForPdf!!.id }
+                        if (filteredSubs.isNotEmpty()) {
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { showSubcategoryDropdown = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = selectedSubcategoryForPdf?.name ?: "Todas as Subcategorias",
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                                DropdownMenu(
+                                    expanded = showSubcategoryDropdown,
+                                    onDismissRequest = { showSubcategoryDropdown = false },
+                                    modifier = Modifier.fillMaxWidth(0.85f)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Todas as Subcategorias") },
+                                        onClick = {
+                                            selectedSubcategoryForPdf = null
+                                            showSubcategoryDropdown = false
+                                        }
+                                    )
+                                    filteredSubs.forEach { sub ->
+                                        DropdownMenuItem(
+                                            text = { Text(sub.name) },
+                                            onClick = {
+                                                selectedSubcategoryForPdf = sub
+                                                showSubcategoryDropdown = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    val transactions = viewModel.repository.getAllTransactions(userId)
+                                    val categories = viewModel.repository.getAllCategories(userId)
+                                    val subcategories = viewModel.repository.getAllSubcategories(userId)
+
+                                    val file = com.example.utils.ExportHelper.exportToPdf(
+                                        context = context,
+                                        startMonth = pdfStartMonth,
+                                        endMonth = pdfEndMonth,
+                                        selectedCategory = selectedCategoryForPdf,
+                                        selectedSubcategory = selectedSubcategoryForPdf,
+                                        transactions = transactions,
+                                        categories = categories,
+                                        subcategories = subcategories
+                                    )
+
+                                    if (file != null) {
+                                        val authority = "${context.packageName}.fileprovider"
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            authority,
+                                            file
+                                        )
+
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Comprovantes Exportados")
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+
+                                        context.startActivity(
+                                            android.content.Intent.createChooser(
+                                                shareIntent,
+                                                "Compartilhar Comprovantes (PDF)"
+                                            )
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureAsPdf,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Exportar Comprovantes (PDF)")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthYearPickerDialog(
+    initialMonth: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    val years = remember { (2020..2030).toList() }
+    val months = remember {
+        listOf(
+            "Jan" to "01", "Fev" to "02", "Mar" to "03", "Abr" to "04",
+            "Mai" to "05", "Jun" to "06", "Jul" to "07", "Ago" to "08",
+            "Set" to "09", "Out" to "10", "Nov" to "11", "Dez" to "12"
+        )
+    }
+
+    val parts = initialMonth.split("-")
+    val initialYear = parts.getOrNull(0)?.toIntOrNull() ?: 2026
+    val initialMonthVal = parts.getOrNull(1) ?: "01"
+
+    var selectedYear by remember { mutableStateOf(initialYear) }
+    var selectedMonthVal by remember { mutableStateOf(initialMonthVal) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Selecionar Mês/Ano",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                // Year selector row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { selectedYear -= 1 }) {
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowLeft,
+                            contentDescription = "Ano anterior",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = selectedYear.toString(),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    IconButton(onClick = { selectedYear += 1 }) {
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowRight,
+                            contentDescription = "Próximo ano",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                // Month Grid
+                androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                    columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.height(180.dp)
+                ) {
+                    items(months.size) { index ->
+                        val (name, value) = months[index]
+                        val isSelected = selectedMonthVal == value
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                    else Color.Transparent
+                                )
+                                .clickable {
+                                    selectedMonthVal = value
+                                }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancelar")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = {
+                        val result = String.format(java.util.Locale.US, "%d-%s", selectedYear, selectedMonthVal)
+                        onConfirm(result)
+                    }) {
+                        Text("Confirmar")
                     }
                 }
             }

@@ -964,133 +964,64 @@ fun BackupSettingsCard(
                         }
                     }
 
-                    Row(
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    val accounts = viewModel.repository.getAllAccounts(userId)
+                                    val transactions = viewModel.repository.getAllTransactions(userId)
+                                    val categories = viewModel.repository.getAllCategories(userId)
+                                    val subcategories = viewModel.repository.getAllSubcategories(userId)
+
+                                    val file = com.example.utils.ExportHelper.exportToCsv(
+                                        context = context,
+                                        startMonth = startMonth,
+                                        endMonth = endMonth,
+                                        accounts = accounts,
+                                        transactions = transactions,
+                                        categories = categories,
+                                        subcategories = subcategories
+                                    )
+
+                                    if (file != null) {
+                                        val authority = "${context.packageName}.fileprovider"
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            authority,
+                                            file
+                                        )
+
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/csv"
+                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Extrato CSV")
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+
+                                        context.startActivity(
+                                            android.content.Intent.createChooser(
+                                                shareIntent,
+                                                "Compartilhar Extrato (CSV)"
+                                            )
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        val accounts = viewModel.repository.getAllAccounts(userId)
-                                        val transactions = viewModel.repository.getAllTransactions(userId)
-                                        val budgetAllocations = viewModel.repository.getAllBudgetAllocations(userId)
-                                        val allocationMovements = viewModel.repository.getAllAllocationMovements(userId)
-                                        val categories = viewModel.repository.getAllCategories(userId)
-                                        val subcategories = viewModel.repository.getAllSubcategories(userId)
-
-                                        val file = com.example.utils.ExportHelper.exportToExcel(
-                                            context = context,
-                                            startMonth = startMonth,
-                                            endMonth = endMonth,
-                                            accounts = accounts,
-                                            transactions = transactions,
-                                            budgetAllocations = budgetAllocations,
-                                            allocationMovements = allocationMovements,
-                                            categories = categories,
-                                            subcategories = subcategories
-                                        )
-
-                                        if (file != null) {
-                                            val authority = "${context.packageName}.fileprovider"
-                                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                                context,
-                                                authority,
-                                                file
-                                            )
-
-                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Extrato Excel")
-                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-
-                                            context.startActivity(
-                                                android.content.Intent.createChooser(
-                                                    shareIntent,
-                                                    "Compartilhar Extrato (Excel)"
-                                                )
-                                            )
-                                        }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.TableView,
-                                contentDescription = null
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Excel", maxLines = 1)
-                        }
-
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        val accounts = viewModel.repository.getAllAccounts(userId)
-                                        val transactions = viewModel.repository.getAllTransactions(userId)
-                                        val categories = viewModel.repository.getAllCategories(userId)
-                                        val subcategories = viewModel.repository.getAllSubcategories(userId)
-
-                                        val file = com.example.utils.ExportHelper.exportToCsv(
-                                            context = context,
-                                            startMonth = startMonth,
-                                            endMonth = endMonth,
-                                            accounts = accounts,
-                                            transactions = transactions,
-                                            categories = categories,
-                                            subcategories = subcategories
-                                        )
-
-                                        if (file != null) {
-                                            val authority = "${context.packageName}.fileprovider"
-                                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                                context,
-                                                authority,
-                                                file
-                                            )
-
-                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                type = "text/csv"
-                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Extrato CSV")
-                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-
-                                            context.startActivity(
-                                                android.content.Intent.createChooser(
-                                                    shareIntent,
-                                                    "Compartilhar Extrato (CSV)"
-                                                )
-                                            )
-                                        }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FileDownload,
-                                contentDescription = null
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("CSV", maxLines = 1)
-                        }
+                        Icon(
+                            imageVector = Icons.Default.FileDownload,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Exportar Extrato (CSV)", maxLines = 1)
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

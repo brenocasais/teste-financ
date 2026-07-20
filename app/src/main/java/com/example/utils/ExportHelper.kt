@@ -345,13 +345,21 @@ object ExportHelper {
                     val uri = Uri.parse(uriStr)
                     if (isPdf) {
                         // Render PDF pages using native PdfRenderer
-                        context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                            val pdfRenderer = android.graphics.pdf.PdfRenderer(pfd)
+                        val pfd = if (uri.scheme == "file") {
+                            val filePath = uri.path ?: uriStr.removePrefix("file://")
+                            android.os.ParcelFileDescriptor.open(File(filePath), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                        } else {
+                            context.contentResolver.openFileDescriptor(uri, "r")
+                        }
+                        pfd?.use { fd ->
+                            val pdfRenderer = android.graphics.pdf.PdfRenderer(fd)
                             for (i in 0 until pdfRenderer.pageCount) {
                                 pdfRenderer.openPage(i).use { rendererPage ->
                                     // A4 aspect ratio bitmap representation of page
+                                    val rendererPageW = if (rendererPage.width > 0) rendererPage.width else 595
+                                    val rendererPageH = if (rendererPage.height > 0) rendererPage.height else 842
                                     val bitmapWidth = 1000
-                                    val bitmapHeight = (1000 * rendererPage.height) / rendererPage.width
+                                    val bitmapHeight = (1000 * rendererPageH) / rendererPageW
                                     val bitmap = android.graphics.Bitmap.createBitmap(bitmapWidth, bitmapHeight, android.graphics.Bitmap.Config.ARGB_8888)
                                     
                                     // Paint page white first to have clean background
@@ -364,6 +372,7 @@ object ExportHelper {
                                     val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pdfDocument.pages.size + 1).create()
                                     val page = pdfDocument.startPage(pageInfo)
                                     val canvas = page.canvas
+                                    canvas.drawColor(android.graphics.Color.WHITE)
 
                                     // Draw Header/Info Text
                                     val paint = Paint().apply {
@@ -402,7 +411,11 @@ object ExportHelper {
                                     val y = 120f + (destHeight - finalHeight) / 2f
 
                                     val destRect = android.graphics.RectF(x, y, x + finalWidth, y + finalHeight)
-                                    canvas.drawBitmap(bitmap, null, destRect, paint)
+                                    val bitmapPaint = Paint().apply {
+                                         isAntiAlias = true
+                                         isFilterBitmap = true
+                                     }
+                                     canvas.drawBitmap(bitmap, null, destRect, bitmapPaint)
 
                                     pdfDocument.finishPage(page)
                                     bitmap.recycle()
@@ -412,36 +425,71 @@ object ExportHelper {
                         }
                     } else {
                         // Decode image and draw
-                        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                            val bitmap = BitmapFactory.decodeStream(inputStream)
-                            if (bitmap != null) {
-                                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pdfDocument.pages.size + 1).create()
-                                val page = pdfDocument.startPage(pageInfo)
-                                val canvas = page.canvas
-
-                                val paint = Paint().apply {
-                                    isAntiAlias = true
+                        val inputStream = try {
+                            if (uri.scheme == "file") {
+                                val filePath = uri.path ?: uriStr.removePrefix("file://")
+                                val decodedPath = java.net.URLDecoder.decode(filePath, "UTF-8")
+                                java.io.FileInputStream(File(decodedPath))
+                            } else {
+                                context.contentResolver.openInputStream(uri)
+                            }
+                        } catch (e: Exception) {
+                            context.contentResolver.openInputStream(uri)
+                        }
+                        inputStream?.use { stream ->
+                            val bytes = stream.readBytes()
+                            var bitmap: android.graphics.Bitmap? = null
+                            if (bytes.isNotEmpty()) {
+                                try {
+                                    val options = android.graphics.BitmapFactory.Options().apply {
+                                        inJustDecodeBounds = true
+                                    }
+                                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                                    
+                                    var inSampleSize = 1
+                                    val maxDim = maxOf(options.outWidth, options.outHeight)
+                                    if (maxDim > 1200) {
+                                        inSampleSize = maxDim / 1200
+                                    }
+                                    
+                                    options.inJustDecodeBounds = false
+                                    options.inSampleSize = inSampleSize
+                                    bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                                } catch (e: Throwable) {
+                                    e.printStackTrace()
                                 }
+                            }
 
-                                // Title
-                                paint.color = android.graphics.Color.DKGRAY
-                                paint.textSize = 14f
-                                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                                canvas.drawText("Comprovante de Transacao", 50f, 50f, paint)
+                            // Create the PDF page regardless of whether bitmap decoding succeeded
+                            val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pdfDocument.pages.size + 1).create()
+                            val page = pdfDocument.startPage(pageInfo)
+                            val canvas = page.canvas
+                            canvas.drawColor(android.graphics.Color.WHITE)
 
-                                // Meta Info
-                                paint.color = android.graphics.Color.GRAY
-                                paint.textSize = 10f
-                                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-                                val formattedVal = currencyFormatter.format(tx.value)
-                                canvas.drawText("Data: ${formatDatePtBr(tx.date)}  |  Valor: $formattedVal", 50f, 75f, paint)
-                                canvas.drawText("Descricao: ${tx.description}", 50f, 90f, paint)
+                            val paint = Paint().apply {
+                                isAntiAlias = true
+                            }
 
-                                val catName = categoryMap[tx.category_id] ?: ""
-                                val subcatName = subcategoryMap[tx.subcategory_id] ?: ""
-                                val catStr = "$catName ${if (subcatName.isNotBlank()) "-> $subcatName" else ""}"
-                                canvas.drawText("Categoria: $catStr", 50f, 105f, paint)
+                            // Title
+                            paint.color = android.graphics.Color.DKGRAY
+                            paint.textSize = 14f
+                            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                            canvas.drawText("Comprovante de Transacao", 50f, 50f, paint)
 
+                            // Meta Info
+                            paint.color = android.graphics.Color.GRAY
+                            paint.textSize = 10f
+                            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                            val formattedVal = currencyFormatter.format(tx.value)
+                            canvas.drawText("Data: ${formatDatePtBr(tx.date)}  |  Valor: $formattedVal", 50f, 75f, paint)
+                            canvas.drawText("Descricao: ${tx.description}", 50f, 90f, paint)
+
+                            val catName = categoryMap[tx.category_id] ?: ""
+                            val subcatName = subcategoryMap[tx.subcategory_id] ?: ""
+                            val catStr = "$catName ${if (subcatName.isNotBlank()) "-> $subcatName" else ""}"
+                            canvas.drawText("Categoria: $catStr", 50f, 105f, paint)
+
+                            if (bitmap != null) {
                                 // Scale and Draw Image
                                 val destWidth = 495f
                                 val destHeight = 670f
@@ -455,11 +503,23 @@ object ExportHelper {
                                 val y = 120f + (destHeight - finalHeight) / 2f
 
                                 val destRect = android.graphics.RectF(x, y, x + finalWidth, y + finalHeight)
-                                canvas.drawBitmap(bitmap, null, destRect, paint)
-
-                                pdfDocument.finishPage(page)
+                                val bitmapPaint = Paint().apply {
+                                    isAntiAlias = true
+                                    isFilterBitmap = true
+                                }
+                                canvas.drawBitmap(bitmap, null, destRect, bitmapPaint)
                                 bitmap.recycle()
+                            } else {
+                                // Draw placeholder message when image is not renderable directly
+                                paint.color = android.graphics.Color.RED
+                                paint.textSize = 12f
+                                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+                                canvas.drawText("Anexo: ${tx.attachment_name ?: "Imagem"}", 50f, 140f, paint)
+                                paint.color = android.graphics.Color.GRAY
+                                canvas.drawText("(O arquivo de comprovante esta anexado a transacao no app)", 50f, 160f, paint)
                             }
+
+                            pdfDocument.finishPage(page)
                         }
                     }
                 } catch (e: Exception) {
@@ -468,6 +528,7 @@ object ExportHelper {
                     val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pdfDocument.pages.size + 1).create()
                     val page = pdfDocument.startPage(pageInfo)
                     val canvas = page.canvas
+                    canvas.drawColor(android.graphics.Color.WHITE)
                     val paint = Paint().apply {
                         isAntiAlias = true
                     }
@@ -493,6 +554,43 @@ object ExportHelper {
             pdfDocument.writeTo(FileOutputStream(file))
             pdfDocument.close()
             file
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun saveUriToInternalStorage(context: Context, uri: Uri, originalName: String): Uri? {
+        return try {
+            val attachmentsDir = File(context.filesDir, "attachments")
+            if (!attachmentsDir.exists()) {
+                attachmentsDir.mkdirs()
+            }
+            val uniqueName = "${System.currentTimeMillis()}_${originalName.replace(" ", "_")}"
+            val targetFile = File(attachmentsDir, uniqueName)
+            
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(targetFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            Uri.fromFile(targetFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun saveFileToInternalStorage(context: Context, file: File, originalName: String): Uri? {
+        return try {
+            val attachmentsDir = File(context.filesDir, "attachments")
+            if (!attachmentsDir.exists()) {
+                attachmentsDir.mkdirs()
+            }
+            val uniqueName = "${System.currentTimeMillis()}_${originalName.replace(" ", "_")}"
+            val targetFile = File(attachmentsDir, uniqueName)
+            file.copyTo(targetFile, overwrite = true)
+            Uri.fromFile(targetFile)
         } catch (e: Exception) {
             e.printStackTrace()
             null

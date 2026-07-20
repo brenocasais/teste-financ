@@ -239,7 +239,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
         currencyFormatter.format(realEconomizadoPrevMonth)
     }
 
-    val showClosureBanner = hasAllocationInPrevMonth
+    val showClosureBanner = false
 
     var showMonthClosureScreen by remember { mutableStateOf(false) }
     var showMonthClosureDistributeDialog by remember { mutableStateOf(false) }

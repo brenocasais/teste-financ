@@ -1556,28 +1556,35 @@ fun TransactionAddEditDialog(
                 // 7. ANEXAR COMPROVANTE (Real ou Captura de Foto com visualizador A4 e leitor de PDF)
                 val context = LocalContext.current
                 var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
+                var tempPhotoFile by remember { mutableStateOf<java.io.File?>(null) }
 
                 val galleryLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.GetContent()
                 ) { uri: Uri? ->
                     if (uri != null) {
-                        try {
-                            context.contentResolver.takePersistableUriPermission(
-                                uri,
-                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        } catch (e: Exception) {}
-                        attachmentUri = uri.toString()
-                        attachmentName = getFileName(context, uri) ?: "Galeria_${System.currentTimeMillis().toString().takeLast(5)}"
+                        val originalName = getFileName(context, uri) ?: "Galeria_${System.currentTimeMillis().toString().takeLast(5)}"
+                        val savedUri = com.example.utils.ExportHelper.saveUriToInternalStorage(context, uri, originalName)
+                        if (savedUri != null) {
+                            attachmentUri = savedUri.toString()
+                            attachmentName = originalName
+                        } else {
+                            showErrorMsg = "Erro ao salvar anexo localmente."
+                        }
                     }
                 }
 
                 val cameraLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.TakePicture()
                 ) { success ->
-                    if (success && tempPhotoUri != null) {
-                        attachmentUri = tempPhotoUri.toString()
-                        attachmentName = "Foto_${System.currentTimeMillis().toString().takeLast(5)}.jpg"
+                    if (success && tempPhotoFile != null) {
+                        val originalName = "Foto_${System.currentTimeMillis().toString().takeLast(5)}.jpg"
+                        val savedUri = com.example.utils.ExportHelper.saveFileToInternalStorage(context, tempPhotoFile!!, originalName)
+                        if (savedUri != null) {
+                            attachmentUri = savedUri.toString()
+                            attachmentName = originalName
+                        } else {
+                            showErrorMsg = "Erro ao salvar foto localmente."
+                        }
                     }
                 }
 
@@ -1585,14 +1592,14 @@ fun TransactionAddEditDialog(
                     contract = ActivityResultContracts.GetContent()
                 ) { uri: Uri? ->
                     if (uri != null) {
-                        try {
-                            context.contentResolver.takePersistableUriPermission(
-                                uri,
-                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        } catch (e: Exception) {}
-                        attachmentUri = uri.toString()
-                        attachmentName = getFileName(context, uri) ?: "Comprovante_${System.currentTimeMillis().toString().takeLast(5)}.pdf"
+                        val originalName = getFileName(context, uri) ?: "Comprovante_${System.currentTimeMillis().toString().takeLast(5)}.pdf"
+                        val savedUri = com.example.utils.ExportHelper.saveUriToInternalStorage(context, uri, originalName)
+                        if (savedUri != null) {
+                            attachmentUri = savedUri.toString()
+                            attachmentName = originalName
+                        } else {
+                            showErrorMsg = "Erro ao salvar PDF localmente."
+                        }
                     }
                 }
 
@@ -1608,6 +1615,7 @@ fun TransactionAddEditDialog(
                                 "${context.packageName}.fileprovider",
                                 file
                             )
+                            tempPhotoFile = file
                             tempPhotoUri = uri
                             cameraLauncher.launch(uri)
                         } catch (e: Exception) {
@@ -1671,6 +1679,7 @@ fun TransactionAddEditDialog(
                                                 "${context.packageName}.fileprovider",
                                                 file
                                             )
+                                            tempPhotoFile = file
                                             tempPhotoUri = uri
                                             cameraLauncher.launch(uri)
                                         } catch (e: Exception) {
@@ -1898,7 +1907,12 @@ fun TransactionAddEditDialog(
                                     is_recurrence_override = transactionToEdit?.is_recurrence_override ?: false,
                                     attachment_uri = attachmentUri,
                                     attachment_name = attachmentName,
-                                    attachment_type = if (attachmentUri != null) "application/pdf" else null,
+                                    attachment_type = if (attachmentUri != null) {
+                                        val name = attachmentName?.lowercase() ?: ""
+                                        if (name.endsWith(".pdf")) "application/pdf"
+                                        else if (name.endsWith(".png")) "image/png"
+                                        else "image/jpeg"
+                                    } else null,
                                     synced = false,
                                     userId = viewModel.currentUserId
                                 )
@@ -2219,7 +2233,12 @@ fun TransactionAddEditDialog(
                                             is_recurrence_override = transactionToEdit.is_recurrence_override,
                                             attachment_uri = attachmentUri,
                                             attachment_name = attachmentName,
-                                            attachment_type = if (attachmentUri != null) "application/pdf" else null,
+                                            attachment_type = if (attachmentUri != null) {
+                                                val name = attachmentName?.lowercase() ?: ""
+                                                if (name.endsWith(".pdf")) "application/pdf"
+                                                else if (name.endsWith(".png")) "image/png"
+                                                else "image/jpeg"
+                                            } else null,
                                             synced = false,
                                             userId = viewModel.currentUserId
                                         )
@@ -2272,7 +2291,12 @@ fun TransactionAddEditDialog(
                                 is_recurrence_override = if (isRecurrence) true else transactionToEdit.is_recurrence_override,
                                 attachment_uri = attachmentUri,
                                 attachment_name = attachmentName,
-                                attachment_type = if (attachmentUri != null) "application/pdf" else null,
+                                attachment_type = if (attachmentUri != null) {
+                                    val name = attachmentName?.lowercase() ?: ""
+                                    if (name.endsWith(".pdf")) "application/pdf"
+                                    else if (name.endsWith(".png")) "image/png"
+                                    else "image/jpeg"
+                                } else null,
                                 synced = false,
                                 userId = viewModel.currentUserId
                             )
@@ -2348,12 +2372,25 @@ private fun getFileName(context: Context, uri: Uri): String? {
 
 private fun renderPdfPageToBitmap(context: Context, uri: Uri): Bitmap? {
     return try {
-        context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-            PdfRenderer(pfd).use { renderer ->
+        val pfd = try {
+            context.contentResolver.openFileDescriptor(uri, "r")
+        } catch (e: Exception) {
+            if (uri.scheme == "file") {
+                val path = uri.path ?: uri.toString().removePrefix("file://")
+                val decodedPath = java.net.URLDecoder.decode(path, "UTF-8")
+                android.os.ParcelFileDescriptor.open(java.io.File(decodedPath), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+            } else {
+                throw e
+            }
+        }
+        pfd?.use { fd ->
+            PdfRenderer(fd).use { renderer ->
                 if (renderer.pageCount > 0) {
                     renderer.openPage(0).use { page ->
+                        val w = if (page.width > 0) page.width else 1000
+                        val h = if (page.height > 0) page.height else 1414
                         val width = 1000
-                        val height = 1414
+                        val height = (1000 * h) / w
                         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                         val canvas = android.graphics.Canvas(bitmap)
                         canvas.drawColor(android.graphics.Color.WHITE)

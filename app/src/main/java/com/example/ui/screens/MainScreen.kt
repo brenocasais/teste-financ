@@ -128,13 +128,42 @@ fun MainScreen(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                when (selectedTab) {
-                    0 -> DashboardTab(viewModel)
-                    1 -> TransactionsScreen(viewModel)
-                    2 -> PlanningScreen(viewModel)
-                    3 -> MetricsScreen(viewModel)
-                    4 -> GoalsScreen(viewModel)
-                    5 -> SettingsScreen(viewModel)
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        val direction = if (targetState > initialState) 1 else -1
+                        val fadeSpec = androidx.compose.animation.core.spring<Float>(
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                        )
+                        val slideSpec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                        )
+                        (slideInHorizontally(
+                            animationSpec = slideSpec,
+                            initialOffsetX = { fullWidth -> direction * (fullWidth / 8) }
+                        ) + fadeIn(
+                            animationSpec = fadeSpec
+                        )).togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = slideSpec,
+                                targetOffsetX = { fullWidth -> -direction * (fullWidth / 8) }
+                            ) + fadeOut(
+                                animationSpec = fadeSpec
+                            )
+                        )
+                    },
+                    label = "TabTransition"
+                ) { targetTab ->
+                    when (targetTab) {
+                        0 -> DashboardTab(viewModel)
+                        1 -> TransactionsScreen(viewModel)
+                        2 -> PlanningScreen(viewModel)
+                        3 -> MetricsScreen(viewModel)
+                        4 -> GoalsScreen(viewModel)
+                        5 -> SettingsScreen(viewModel)
+                    }
                 }
             }
         }

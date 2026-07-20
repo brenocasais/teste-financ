@@ -346,8 +346,12 @@ object ExportHelper {
                     if (isPdf) {
                         // Render PDF pages using native PdfRenderer
                         val pfd = if (uri.scheme == "file") {
-                            val filePath = uri.path ?: uriStr.removePrefix("file://")
-                            android.os.ParcelFileDescriptor.open(File(filePath), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                            val filePath = uri.path
+                            if (filePath != null && File(filePath).exists()) {
+                                android.os.ParcelFileDescriptor.open(File(filePath), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                            } else {
+                                context.contentResolver.openFileDescriptor(uri, "r")
+                            }
                         } else {
                             context.contentResolver.openFileDescriptor(uri, "r")
                         }
@@ -427,16 +431,20 @@ object ExportHelper {
                         // Decode image and draw
                         val inputStream = try {
                             if (uri.scheme == "file") {
-                                val filePath = uri.path ?: uriStr.removePrefix("file://")
-                                val decodedPath = java.net.URLDecoder.decode(filePath, "UTF-8")
-                                java.io.FileInputStream(File(decodedPath))
+                                val filePath = uri.path
+                                if (filePath != null && File(filePath).exists()) {
+                                    java.io.FileInputStream(File(filePath))
+                                } else {
+                                    context.contentResolver.openInputStream(uri)
+                                }
                             } else {
                                 context.contentResolver.openInputStream(uri)
                             }
                         } catch (e: Exception) {
                             context.contentResolver.openInputStream(uri)
                         }
-                        inputStream?.use { stream ->
+                        val stream = inputStream ?: throw java.io.FileNotFoundException("Nao foi possivel abrir o fluxo de entrada para o anexo.")
+                        stream.use { stream ->
                             val bytes = stream.readBytes()
                             var bitmap: android.graphics.Bitmap? = null
                             if (bytes.isNotEmpty()) {
@@ -535,12 +543,33 @@ object ExportHelper {
                     paint.color = android.graphics.Color.RED
                     paint.textSize = 12f
                     paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                    canvas.drawText("Nao foi possivel carregar o anexo para esta transacao.", 50f, 50f, paint)
+                    
+                    val uri = try { Uri.parse(uriStr) } catch (ex: Exception) { null }
+                    val errorMsg = if (e is java.io.FileNotFoundException) {
+                        val caminho = uri?.path ?: uriStr
+                        "Arquivo nao encontrado no caminho: $caminho"
+                    } else {
+                        e.message ?: "Erro desconhecido ao carregar o anexo"
+                    }
+                    
+                    canvas.drawText("Erro ao carregar o anexo:", 50f, 50f, paint)
+                    
+                    paint.color = android.graphics.Color.RED
+                    paint.textSize = 10f
+                    paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                    
+                    val maxLineLength = 80
+                    val errorLines = errorMsg.chunked(maxLineLength)
+                    var currentY = 70f
+                    errorLines.forEach { line ->
+                        canvas.drawText(line, 50f, currentY, paint)
+                        currentY += 15f
+                    }
                     
                     paint.color = android.graphics.Color.GRAY
                     paint.textSize = 10f
                     paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-                    canvas.drawText("Data: ${formatDatePtBr(tx.date)} | Descricao: ${tx.description}", 50f, 75f, paint)
+                    canvas.drawText("Data: ${formatDatePtBr(tx.date)} | Descricao: ${tx.description}", 50f, currentY + 15f, paint)
                     pdfDocument.finishPage(page)
                 }
             }

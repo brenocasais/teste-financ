@@ -42,20 +42,24 @@ class MeuFinanceiroApplication : Application() {
         authManager = AuthManager()
 
         // Schedule periodic notification worker (every 1 hour)
-        val constraints = androidx.work.Constraints.Builder()
-            .setRequiredNetworkType(androidx.work.NetworkType.NOT_REQUIRED)
-            .build()
+        try {
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(androidx.work.NetworkType.NOT_REQUIRED)
+                .build()
 
-        val workRequest = androidx.work.PeriodicWorkRequestBuilder<com.example.data.notification.NotificationWorker>(
-            1, java.util.concurrent.TimeUnit.HOURS
-        )
-            .setConstraints(constraints)
-            .build()
+            val workRequest = androidx.work.PeriodicWorkRequestBuilder<com.example.data.notification.NotificationWorker>(
+                1, java.util.concurrent.TimeUnit.HOURS
+            )
+                .setConstraints(constraints)
+                .build()
 
-        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "PeriodicNotificationCheck",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
-            workRequest
-        )
+            androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "PeriodicNotificationCheck",
+                androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                workRequest
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

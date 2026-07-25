@@ -753,6 +753,8 @@ fun BackupSettingsCard(
     var pdfEndMonth by remember { mutableStateOf(currentMonth) }
     var showPdfStartMonthPicker by remember { mutableStateOf(false) }
     var showPdfEndMonthPicker by remember { mutableStateOf(false) }
+    var pdfAllMonths by remember { mutableStateOf(false) }
+    var pdfExportErrorMessage by remember { mutableStateOf<String?>(null) }
 
     var selectedCategoryForPdf by remember { mutableStateOf<com.example.data.model.Category?>(null) }
     var selectedSubcategoryForPdf by remember { mutableStateOf<com.example.data.model.Subcategory?>(null) }
@@ -1040,19 +1042,75 @@ fun BackupSettingsCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    // Error Message Banner if no transactions found
+                    pdfExportErrorMessage?.let { errMsg ->
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("pdf_error_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = "Erro"
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = errMsg,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                IconButton(onClick = { pdfExportErrorMessage = null }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Fechar"
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Shortcut for all months (Selecionar todos os meses)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().testTag("pdf_all_months_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Checkbox(
+                            checked = pdfAllMonths,
+                            onCheckedChange = { pdfAllMonths = it },
+                            modifier = Modifier.testTag("pdf_all_months_checkbox")
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Selecionar todos os meses",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.clickable { pdfAllMonths = !pdfAllMonths }
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
                             onClick = { showPdfStartMonthPicker = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
+                            modifier = Modifier.weight(1f).testTag("pdf_start_month_btn"),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !pdfAllMonths
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("Mês Inicial", style = MaterialTheme.typography.labelSmall)
                                 Text(
-                                    text = com.example.utils.ExportHelper.formatMonthPtBr(pdfStartMonth),
+                                    text = if (pdfAllMonths) "Todos" else com.example.utils.ExportHelper.formatMonthPtBr(pdfStartMonth),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1061,13 +1119,14 @@ fun BackupSettingsCard(
 
                         OutlinedButton(
                             onClick = { showPdfEndMonthPicker = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
+                            modifier = Modifier.weight(1f).testTag("pdf_end_month_btn"),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !pdfAllMonths
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("Mês Final", style = MaterialTheme.typography.labelSmall)
                                 Text(
-                                    text = com.example.utils.ExportHelper.formatMonthPtBr(pdfEndMonth),
+                                    text = if (pdfAllMonths) "Todos" else com.example.utils.ExportHelper.formatMonthPtBr(pdfEndMonth),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1079,7 +1138,7 @@ fun BackupSettingsCard(
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
                             onClick = { showCategoryDropdown = true },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag("pdf_category_btn"),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Row(
@@ -1124,53 +1183,57 @@ fun BackupSettingsCard(
                         }
                     }
 
-                    // Subcategory dropdown button
-                    if (selectedCategoryForPdf != null) {
-                        val filteredSubs = subcategories.filter { it.category_id == selectedCategoryForPdf!!.id }
-                        if (filteredSubs.isNotEmpty()) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton(
-                                    onClick = { showSubcategoryDropdown = true },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = selectedSubcategoryForPdf?.name ?: "Todas as Subcategorias",
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.ArrowDropDown,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
+                    // Subcategory dropdown button (Dependent on Category being selected, always visible but disabled if not selected)
+                    val isSubcategoryEnabled = selectedCategoryForPdf != null
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { if (isSubcategoryEnabled) showSubcategoryDropdown = true },
+                            modifier = Modifier.fillMaxWidth().testTag("pdf_subcategory_btn"),
+                            enabled = isSubcategoryEnabled,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (!isSubcategoryEnabled) {
+                                        "Selecione uma Categoria primeiro"
+                                    } else {
+                                        selectedSubcategoryForPdf?.name ?: "Todas as Subcategorias"
+                                    },
+                                    color = if (isSubcategoryEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = if (isSubcategoryEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                )
+                            }
+                        }
+                        if (isSubcategoryEnabled) {
+                            val filteredSubs = subcategories.filter { it.category_id == selectedCategoryForPdf!!.id }
+                            DropdownMenu(
+                                expanded = showSubcategoryDropdown,
+                                onDismissRequest = { showSubcategoryDropdown = false },
+                                modifier = Modifier.fillMaxWidth(0.85f)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Todas as Subcategorias") },
+                                    onClick = {
+                                        selectedSubcategoryForPdf = null
+                                        showSubcategoryDropdown = false
                                     }
-                                }
-                                DropdownMenu(
-                                    expanded = showSubcategoryDropdown,
-                                    onDismissRequest = { showSubcategoryDropdown = false },
-                                    modifier = Modifier.fillMaxWidth(0.85f)
-                                ) {
+                                )
+                                filteredSubs.forEach { sub ->
                                     DropdownMenuItem(
-                                        text = { Text("Todas as Subcategorias") },
+                                        text = { Text(sub.name) },
                                         onClick = {
-                                            selectedSubcategoryForPdf = null
+                                            selectedSubcategoryForPdf = sub
                                             showSubcategoryDropdown = false
                                         }
                                     )
-                                    filteredSubs.forEach { sub ->
-                                        DropdownMenuItem(
-                                            text = { Text(sub.name) },
-                                            onClick = {
-                                                selectedSubcategoryForPdf = sub
-                                                showSubcategoryDropdown = false
-                                            }
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -1178,21 +1241,22 @@ fun BackupSettingsCard(
 
                     Button(
                         onClick = {
+                            pdfExportErrorMessage = null // Reset message
                             scope.launch {
                                 try {
                                     val transactions = viewModel.repository.getAllTransactions(userId)
-                                    val categories = viewModel.repository.getAllCategories(userId)
-                                    val subcategories = viewModel.repository.getAllSubcategories(userId)
+                                    val categoriesList = viewModel.repository.getAllCategories(userId)
+                                    val subcategoriesList = viewModel.repository.getAllSubcategories(userId)
 
                                     val file = com.example.utils.ExportHelper.exportToPdf(
                                         context = context,
-                                        startMonth = pdfStartMonth,
-                                        endMonth = pdfEndMonth,
+                                        startMonth = if (pdfAllMonths) "" else pdfStartMonth,
+                                        endMonth = if (pdfAllMonths) "" else pdfEndMonth,
                                         selectedCategory = selectedCategoryForPdf,
                                         selectedSubcategory = selectedSubcategoryForPdf,
                                         transactions = transactions,
-                                        categories = categories,
-                                        subcategories = subcategories
+                                        categories = categoriesList,
+                                        subcategories = subcategoriesList
                                     )
 
                                     if (file != null) {
@@ -1216,13 +1280,16 @@ fun BackupSettingsCard(
                                                 "Compartilhar Comprovantes (PDF)"
                                             )
                                         )
+                                    } else {
+                                        pdfExportErrorMessage = "Nenhum comprovante encontrado com esses filtros"
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
+                                    pdfExportErrorMessage = "Erro ao exportar PDF: ${e.message}"
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("pdf_export_submit_btn"),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary

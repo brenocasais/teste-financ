@@ -1758,6 +1758,7 @@ fun TransactionAddEditDialog(
                                     transactionDate = dateString,
                                     categoryName = selectedCategory?.name,
                                     accountName = selectedAccount?.name ?: "",
+                                    transaction = transactionToEdit,
                                     onDismiss = { showViewer = false }
                                 )
                             }
@@ -2372,17 +2373,7 @@ private fun getFileName(context: Context, uri: Uri): String? {
 
 private fun renderPdfPageToBitmap(context: Context, uri: Uri): Bitmap? {
     return try {
-        val pfd = try {
-            context.contentResolver.openFileDescriptor(uri, "r")
-        } catch (e: Exception) {
-            if (uri.scheme == "file") {
-                val path = uri.path ?: uri.toString().removePrefix("file://")
-                val decodedPath = java.net.URLDecoder.decode(path, "UTF-8")
-                android.os.ParcelFileDescriptor.open(java.io.File(decodedPath), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
-            } else {
-                throw e
-            }
-        }
+        val pfd = com.example.utils.ExportHelper.openFileDescriptorSafely(context, uri)
         pfd?.use { fd ->
             PdfRenderer(fd).use { renderer ->
                 if (renderer.pageCount > 0) {
@@ -2415,14 +2406,26 @@ fun AttachmentViewerDialog(
     transactionDate: String,
     categoryName: String?,
     accountName: String,
+    transaction: Transaction? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val parsedUri = remember(attachmentUri) { Uri.parse(attachmentUri) }
+    val parsedUri = remember(attachmentUri) {
+        try {
+            if (attachmentUri.startsWith("/") || !attachmentUri.contains(":/")) {
+                Uri.fromFile(java.io.File(attachmentUri))
+            } else {
+                Uri.parse(attachmentUri)
+            }
+        } catch (e: Exception) {
+            Uri.parse(attachmentUri)
+        }
+    }
     val isPdf = remember(attachmentName) { attachmentName.endsWith(".pdf", true) }
 
     var pdfBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var renderError by remember { mutableStateOf(false) }
+    var imageLoadError by remember { mutableStateOf(false) }
 
     LaunchedEffect(parsedUri) {
         if (isPdf) {
@@ -2474,11 +2477,56 @@ fun AttachmentViewerDialog(
                             fontSize = 12.sp
                         )
                     }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Fechar Visualizador", tint = Color.White)
+                        val coroutineScope = rememberCoroutineScope()
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val file = com.example.utils.ExportHelper.exportAttachmentOnlyToPdf(
+                                        context = context,
+                                        attachmentUri = attachmentUri,
+                                        attachmentName = attachmentName
+                                    )
+                                    if (file != null) {
+                                        val authority = "${context.packageName}.fileprovider"
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            authority,
+                                            file
+                                        )
+
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Comprovante - $attachmentName")
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+
+                                        context.startActivity(
+                                            android.content.Intent.createChooser(
+                                                shareIntent,
+                                                "Exportar Comprovante (PDF)"
+                                            )
+                                        )
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Erro ao gerar PDF do comprovante", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Exportar PDF", tint = Color.White)
+                        }
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Fechar Visualizador", tint = Color.White)
+                        }
                     }
                 }
 
@@ -2491,22 +2539,53 @@ fun AttachmentViewerDialog(
                         .background(Color.White),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isPdf && pdfBitmap != null) {
-                        Image(
-                            bitmap = pdfBitmap!!.asImageBitmap(),
-                            contentDescription = "Página PDF",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else if (!isPdf && !attachmentUri.startsWith("content://meu_financeiro/")) {
-                        AsyncImage(
-                            model = attachmentUri,
-                            contentDescription = "Comprovante real",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                            error = rememberVectorPainter(Icons.Default.Error)
-                        )
+                    val hasRealAttachment = !attachmentUri.startsWith("content://meu_financeiro/") && attachmentUri.isNotBlank()
+
+                    if (isPdf) {
+                        if (pdfBitmap != null) {
+                            Image(
+                                bitmap = pdfBitmap!!.asImageBitmap(),
+                                contentDescription = "Página PDF",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else if (renderError) {
+                            // Honest Error Screen for PDF render failure
+                            AttachmentRenderErrorScreen(
+                                isPdf = true,
+                                transactionDescription = transactionDescription,
+                                transactionValue = transactionValue,
+                                transactionDate = transactionDate,
+                                categoryName = categoryName,
+                                accountName = accountName
+                            )
+                        } else {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
+                    } else if (hasRealAttachment) {
+                        if (imageLoadError) {
+                            // Honest Error Screen for Image loading failure
+                            AttachmentRenderErrorScreen(
+                                isPdf = false,
+                                transactionDescription = transactionDescription,
+                                transactionValue = transactionValue,
+                                transactionDate = transactionDate,
+                                categoryName = categoryName,
+                                accountName = accountName
+                            )
+                        } else {
+                            AsyncImage(
+                                model = attachmentUri,
+                                contentDescription = "Comprovante real",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit,
+                                onError = {
+                                    imageLoadError = true
+                                }
+                            )
+                        }
                     } else {
+                        // Genuinely has no real attachment
                         A4ReceiptLayout(
                             description = transactionDescription,
                             value = transactionValue,
@@ -2525,6 +2604,105 @@ fun AttachmentViewerDialog(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun AttachmentRenderErrorScreen(
+    isPdf: Boolean,
+    transactionDescription: String,
+    transactionValue: Double,
+    transactionDate: String,
+    categoryName: String?,
+    accountName: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFFDE8E8)) // Light red background for error page
+            .padding(24.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = null,
+                tint = Color(0xFFC53030),
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Não foi possível carregar o anexo desta transação",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFC53030),
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = if (isPdf) {
+                    "Falha ao renderizar a página PDF. O arquivo pode estar corrompido, inacessível ou o formato não é suportado pelo dispositivo."
+                } else {
+                    "Falha ao carregar a imagem. O arquivo pode não existir mais no armazenamento ou o formato é inválido."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF9B2C2C),
+                textAlign = TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            HorizontalDivider(color = Color(0xFFFEB2B2))
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "DETALHES DA TRANSAÇÃO",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF742A2A)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            TransactionDetailRow(label = "Descrição:", value = transactionDescription)
+            TransactionDetailRow(label = "Valor:", value = "R$ " + String.format(Locale.US, "%.2f", transactionValue))
+            TransactionDetailRow(label = "Data:", value = transactionDate)
+            categoryName?.let {
+                TransactionDetailRow(label = "Categoria:", value = it)
+            }
+            TransactionDetailRow(label = "Conta:", value = accountName)
+        }
+        
+        Text(
+            text = "Erro Técnico • Meu Financeiro",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF9B2C2C).copy(alpha = 0.7f)
+        )
+    }
+}
+
+@Composable
+fun TransactionDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF742A2A)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2D3748)
+        )
     }
 }
 

@@ -30,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -734,7 +735,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                 ) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .height(38.dp)
                             .background(cardBgColor, RoundedCornerShape(10.dp))
                             .border(1.dp, cardBorderColor, RoundedCornerShape(10.dp))
@@ -781,29 +782,11 @@ fun PlanningScreen(viewModel: MainViewModel) {
                             }
                         }
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .background(cardBgColor, RoundedCornerShape(10.dp))
-                            .border(1.dp, cardBorderColor, RoundedCornerShape(10.dp))
-                            .clickable {
-                                selectedFilter = if (selectedFilter == "ALL") "ALERT" else "ALL"
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = "Filtros",
-                            tint = if (selectedFilter != "ALL") greenColor else secondaryTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Chips de filtro por estado compactos
+                // Chips de filtro por estado compactos e distribuídos igualmente
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -822,6 +805,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                         val isSelected = selectedFilter == key
                         Box(
                             modifier = Modifier
+                                .weight(1f)
                                 .height(28.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(if (isSelected) greenColor.copy(alpha = 0.15f) else cardBgColor)
@@ -829,13 +813,13 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                     BorderStroke(1.dp, if (isSelected) greenColor else cardBorderColor),
                                     RoundedCornerShape(14.dp)
                                 )
-                                .clickable { selectedFilter = key }
-                                .padding(horizontal = 10.dp),
+                                .clickable { selectedFilter = key },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isSelected) greenColor else secondaryTextColor
                             )
@@ -967,6 +951,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                 Spacer(modifier = Modifier.height(12.dp))
                                                 subsInCat.forEachIndexed { index, sub ->
                                                     val isActionPanelExpanded = expandedActionPanelId == "sub_${sub.id}"
+                                                    val isFirst = index == 0
                                                     val isLast = index == subsInCat.size - 1
 
                                                     if (cat.id == -999) {
@@ -982,6 +967,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                             planejado = subPlanejado,
                                                             alocado = subAlocadoWithRollover,
                                                             gasto = subGasto,
+                                                            isFirst = isFirst,
                                                             isLast = isLast,
                                                             isActionPanelExpanded = isActionPanelExpanded,
                                                             onRowClick = {
@@ -1018,6 +1004,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                             planejado = subPlanejado,
                                                             alocado = subAlocadoWithRollover,
                                                             gasto = subGasto,
+                                                            isFirst = isFirst,
                                                             isLast = isLast,
                                                             isActionPanelExpanded = isActionPanelExpanded,
                                                             onRowClick = {
@@ -1984,22 +1971,29 @@ private fun formatPlanningMoney(value: Double): String {
     return currencyFormatter.format(value)
 }
 
-private fun getPlanningAvailabilityInfo(alocado: Double, gasto: Double): Pair<String, Color> {
+private fun getPlanningAvailabilityInfo(alocado: Double, gasto: Double, isDark: Boolean = false): Pair<String, Color> {
     val disponivel = alocado - gasto
     val formatted = formatPlanningMoney(Math.abs(disponivel))
+    val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
     return if (disponivel >= 0) {
-        Pair("$formatted disponíveis", Color(0xFF22A45D))
+        Pair("$formatted disponíveis", greenColor)
     } else {
-        Pair("$formatted acima", Color(0xFFEF4444))
+        Pair("$formatted acima", redColor)
     }
 }
 
-private fun getPlanningProgressColor(planejado: Double, alocado: Double, gasto: Double): Color {
+private fun getPlanningProgressColor(planejado: Double, alocado: Double, gasto: Double, isDark: Boolean = false): Color {
+    val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+    val orangeColor = if (isDark) Color(0xFFFF9F1C) else Color(0xFFF59E0B)
+    val grayColor = Color(0xFF9FA9AB)
+
     return when {
-        planejado == 0.0 && alocado == 0.0 && gasto == 0.0 -> Color(0xFF9FA9AB)
-        gasto > alocado || (alocado == 0.0 && gasto > 0.0) -> Color(0xFFEF4444)
-        gasto > planejado && planejado > 0.0 -> Color(0xFFF59E0B)
-        else -> Color(0xFF22A45D)
+        planejado == 0.0 && alocado == 0.0 && gasto == 0.0 -> grayColor
+        gasto > alocado || (alocado == 0.0 && gasto > 0.0) -> redColor
+        gasto > planejado && planejado > 0.0 -> orangeColor
+        else -> greenColor
     }
 }
 
@@ -2008,7 +2002,9 @@ fun BudgetValuesGrid(
     planejado: Double,
     alocado: Double,
     gasto: Double,
-    isMeta: Boolean = false
+    isMeta: Boolean = false,
+    pctInt: Int? = null,
+    progressColor: Color = Color.Unspecified
 ) {
     val isDark = isSystemInDarkTheme()
     val textColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
@@ -2076,44 +2072,37 @@ fun BudgetValuesGrid(
                 )
             }
         }
+
+        // Porcentagem alinhada à direita na mesma linha de cima
+        if (pctInt != null) {
+            Text(
+                text = "$pctInt%",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = progressColor,
+                textAlign = TextAlign.End
+            )
+        }
     }
 }
 
 @Composable
 fun BudgetProgressIndicator(
     progressFloat: Float,
-    pctInt: Int,
     progressColor: Color
 ) {
     val isDark = isSystemInDarkTheme()
     val trackColor = if (isDark) Color(0xFF202B2E) else Color(0xFFEAEAEA)
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        LinearProgressIndicator(
-            progress = { progressFloat },
-            modifier = Modifier
-                .weight(1f)
-                .height(5.dp)
-                .clip(RoundedCornerShape(3.dp)),
-            color = progressColor,
-            trackColor = trackColor
-        )
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Text(
-            text = "$pctInt%",
-            modifier = Modifier.width(38.dp),
-            textAlign = TextAlign.End,
-            style = MaterialTheme.typography.bodySmall,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = progressColor
-        )
-    }
+    LinearProgressIndicator(
+        progress = { progressFloat },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(5.dp)
+            .clip(RoundedCornerShape(3.dp)),
+        color = progressColor,
+        trackColor = trackColor
+    )
 }
 
 @Composable
@@ -2139,11 +2128,16 @@ fun CategoryRowItem(
     val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
 
     val isMeta = category.id == -999
-    val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto)
+    val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto, isDark = isDark)
 
     val progressFloat = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
     val pctInt = if (alocado > 0) ((gasto / alocado) * 100).toInt() else 0
-    val progressColor = getPlanningProgressColor(planejado, alocado, gasto)
+    val progressColor = getPlanningProgressColor(planejado, alocado, gasto, isDark = isDark)
+
+    val alertRed = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+    val alertGreen = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val iconBgColor = if (progressColor == alertRed) (if (isDark) Color(0xFF5C1D24) else Color(0xFFFEE2E2)) else (if (isDark) Color(0xFF1B3C2A) else Color(0xFFE6F4EA))
+    val iconTint = if (progressColor == alertRed) alertRed else alertGreen
 
     Column(
         modifier = Modifier
@@ -2164,13 +2158,13 @@ fun CategoryRowItem(
                 modifier = Modifier
                     .size(24.dp)
                     .clip(CircleShape)
-                    .background(if (progressColor == Color(0xFFEF4444)) Color(0xFFFEE2E2) else Color(0xFFE6F4EA)),
+                    .background(iconBgColor),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = getCategoryIcon(category.name),
                     contentDescription = null,
-                    tint = if (progressColor == Color(0xFFEF4444)) Color(0xFFEF4444) else Color(0xFF22A45D),
+                    tint = iconTint,
                     modifier = Modifier.size(13.dp)
                 )
             }
@@ -2213,7 +2207,7 @@ fun CategoryRowItem(
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = "Aviso",
-                        tint = Color(0xFFF59E0B),
+                        tint = if (isDark) Color(0xFFFF9F1C) else Color(0xFFF59E0B),
                         modifier = Modifier.size(13.dp)
                     )
                 }
@@ -2225,7 +2219,7 @@ fun CategoryRowItem(
                 text = if (isMeta) "${formatPlanningMoney(alocado)} acumulados" else statusText,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = if (isMeta) Color(0xFF22A45D) else statusColor,
+                color = if (isMeta) (if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)) else statusColor,
                 textAlign = TextAlign.End
             )
 
@@ -2241,23 +2235,24 @@ fun CategoryRowItem(
 
         Spacer(modifier = Modifier.height(3.dp))
 
-        // Line 2: Values Summary
+        // Line 2: Values Summary + Percentage
         Box(modifier = Modifier.padding(start = 30.dp)) {
             BudgetValuesGrid(
                 planejado = planejado,
                 alocado = alocado,
                 gasto = gasto,
-                isMeta = isMeta
+                isMeta = isMeta,
+                pctInt = if (!isMeta) pctInt else null,
+                progressColor = progressColor
             )
         }
 
-        // Line 3: Progress Bar & Percentage
+        // Line 3: Progress Bar
         if (!isMeta) {
             Spacer(modifier = Modifier.height(3.dp))
             Box(modifier = Modifier.padding(start = 30.dp)) {
                 BudgetProgressIndicator(
                     progressFloat = progressFloat,
-                    pctInt = pctInt,
                     progressColor = progressColor
                 )
             }
@@ -2289,60 +2284,61 @@ fun SubcategoryRowItem(
     val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
 
     val isMeta = category.id == -999
-    val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto)
+    val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto, isDark = isDark)
 
     val progressFloat = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
     val pctInt = if (alocado > 0) ((gasto / alocado) * 100).toInt() else 0
-    val progressColor = getPlanningProgressColor(planejado, alocado, gasto)
+    val progressColor = getPlanningProgressColor(planejado, alocado, gasto, isDark = isDark)
 
-    Row(
+    val alertRed = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+    val alertGreen = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val iconBgColor = if (progressColor == alertRed) (if (isDark) Color(0xFF5C1D24) else Color(0xFFFEE2E2)) else (if (isDark) Color(0xFF1B3C2A) else Color(0xFFE6F4EA))
+    val iconTint = if (progressColor == alertRed) alertRed else alertGreen
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = 32.dp)
-            .height(IntrinsicSize.Min)
             .combinedClickable(
                 onClick = onRowClick,
                 onLongClick = onRowLongClick
             )
-            .padding(vertical = 1.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        // Connector line: continuous dashed vertical line from Category down to Subcategories
-        Box(
-            modifier = Modifier
-                .width(16.dp)
-                .fillMaxHeight()
-        ) {
-            Canvas(modifier = Modifier.matchParentSize()) {
+            .padding(vertical = 1.dp)
+            .drawBehind {
                 val strokeWidth = 1.5.dp.toPx()
                 val dashEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f)
                 val connectorColor = if (isDark) Color(0xFF38474A) else Color(0xFFC0C7CE)
 
-                val lineX = 8.dp.toPx()
+                val lineX = 12.dp.toPx()
+                val subIconX = 30.dp.toPx()
                 val iconCenterY = 10.dp.toPx()
 
+                val lineTop = if (isFirst) -14.dp.toPx() else 0f
                 val lineBottom = if (isLast) iconCenterY else size.height
 
+                // Continuous vertical dashed line from Category icon center down to last subcategory icon
                 drawLine(
                     color = connectorColor,
-                    start = Offset(x = lineX, y = 0f),
+                    start = Offset(x = lineX, y = lineTop),
                     end = Offset(x = lineX, y = lineBottom),
                     strokeWidth = strokeWidth,
                     pathEffect = dashEffect
                 )
+                // Horizontal dashed branch connecting to subcategory icon at subIconX (30.dp)
                 drawLine(
                     color = connectorColor,
                     start = Offset(x = lineX, y = iconCenterY),
-                    end = Offset(x = size.width, y = iconCenterY),
+                    end = Offset(x = subIconX, y = iconCenterY),
                     strokeWidth = strokeWidth,
                     pathEffect = dashEffect
                 )
             }
-        }
-
-        Spacer(modifier = Modifier.width(3.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 30.dp)
+        ) {
             // Line 1: Subcategory Icon + Name + Status + Chevron
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2352,13 +2348,13 @@ fun SubcategoryRowItem(
                     modifier = Modifier
                         .size(20.dp)
                         .clip(CircleShape)
-                        .background(if (progressColor == Color(0xFFEF4444)) Color(0xFFFEE2E2) else Color(0xFFE6F4EA)),
+                        .background(iconBgColor),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = getCategoryIcon(subcategory.name),
                         contentDescription = null,
-                        tint = if (progressColor == Color(0xFFEF4444)) Color(0xFFEF4444) else Color(0xFF22A45D),
+                        tint = iconTint,
                         modifier = Modifier.size(11.dp)
                     )
                 }
@@ -2381,7 +2377,7 @@ fun SubcategoryRowItem(
                     text = if (isMeta) "${formatPlanningMoney(alocado)} acumulados" else statusText,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isMeta) Color(0xFF22A45D) else statusColor,
+                    color = if (isMeta) (if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)) else statusColor,
                     textAlign = TextAlign.End
                 )
 
@@ -2397,22 +2393,27 @@ fun SubcategoryRowItem(
 
             Spacer(modifier = Modifier.height(3.dp))
 
-            // Line 2: Values in 3 clean columns
-            BudgetValuesGrid(
-                planejado = planejado,
-                alocado = alocado,
-                gasto = gasto,
-                isMeta = isMeta
-            )
-
-            // Line 3: Progress bar & Percentage
-            if (!isMeta) {
-                Spacer(modifier = Modifier.height(3.dp))
-                BudgetProgressIndicator(
-                    progressFloat = progressFloat,
-                    pctInt = pctInt,
+            // Line 2: Values in 3 clean columns + Percentage
+            Box(modifier = Modifier.padding(start = 25.dp)) {
+                BudgetValuesGrid(
+                    planejado = planejado,
+                    alocado = alocado,
+                    gasto = gasto,
+                    isMeta = isMeta,
+                    pctInt = if (!isMeta) pctInt else null,
                     progressColor = progressColor
                 )
+            }
+
+            // Line 3: Progress bar alone
+            if (!isMeta) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Box(modifier = Modifier.padding(start = 25.dp)) {
+                    BudgetProgressIndicator(
+                        progressFloat = progressFloat,
+                        progressColor = progressColor
+                    )
+                }
             }
 
             // Action Panel ONLY for Subcategory if expanded
@@ -2424,7 +2425,7 @@ fun SubcategoryRowItem(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp)
+                        .padding(top = 4.dp, start = 25.dp)
                         .background(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             shape = RoundedCornerShape(8.dp)

@@ -444,8 +444,7 @@ fun DashboardScreen(
                                         Text(
                                             text = "${formatMoney(monthDiff)} este mês",
                                             style = MaterialTheme.typography.labelMedium.copy(
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 11.sp
+                                                fontWeight = FontWeight.SemiBold
                                             ),
                                             color = financeColors.success
                                         )
@@ -1023,7 +1022,7 @@ fun DashboardScreen(
                             imageVector = Icons.Default.ChevronRight,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }

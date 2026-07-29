@@ -288,6 +288,9 @@ interface GoalDao {
 
 @Dao
 interface NotificationLogDao {
+    @Query("SELECT * FROM notification_logs WHERE userId = :userId ORDER BY sent_at DESC")
+    fun getNotificationLogsFlow(userId: String): kotlinx.coroutines.flow.Flow<List<NotificationLog>>
+
     @Query("SELECT * FROM notification_logs WHERE userId = :userId")
     suspend fun getAllLogs(userId: String): List<NotificationLog>
 

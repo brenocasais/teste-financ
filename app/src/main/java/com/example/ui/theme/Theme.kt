@@ -8,31 +8,52 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = EmeraldGreenDark,
-    secondary = MintGreen,
-    tertiary = SlateLight,
-    background = SlateBackgroundDark,
-    surface = CardBackgroundDark,
-    onPrimary = SlateGreyDark,
-    onSecondary = SlateGreyDark,
-    onBackground = CardBackgroundLight,
-    onSurface = CardBackgroundLight
+    primary = DarkGreen,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkSurfaceVariant,
+    onPrimaryContainer = DarkGreen,
+    secondary = DarkOrange,
+    onSecondary = DarkBackground,
+    tertiary = DarkRed,
+    onTertiary = DarkBackground,
+    background = DarkBackground,
+    onBackground = DarkOnSurface,
+    surface = DarkSurface,
+    onSurface = DarkOnSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outlineVariant = DarkOutlineVariant,
+    outline = DarkOutlineVariant
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = EmeraldGreen,
-    secondary = MintGreen,
-    tertiary = SlateGrey,
-    background = CardBackgroundLight,
-    surface = CardBackgroundLight,
-    onPrimary = CardBackgroundLight,
-    onSecondary = SlateGreyDark,
-    onBackground = SlateGreyDark,
-    onSurface = SlateGreyDark
+    primary = LightGreen,
+    onPrimary = LightSurface,
+    primaryContainer = LightSurfaceVariant,
+    onPrimaryContainer = LightGreen,
+    secondary = LightOrange,
+    onSecondary = LightSurface,
+    tertiary = LightRed,
+    onTertiary = LightSurface,
+    background = LightBackground,
+    onBackground = LightOnSurface,
+    surface = LightSurface,
+    onSurface = LightOnSurface,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    outlineVariant = LightOutlineVariant,
+    outline = LightOutlineVariant
 )
+
+val MaterialTheme.financeColors: FinanceColorScheme
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalFinanceColors.current
 
 @Composable
 fun MyApplicationTheme(
@@ -50,9 +71,16 @@ fun MyApplicationTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    val financeColors = if (darkTheme) DarkFinanceColorScheme else LightFinanceColorScheme
+
+    CompositionLocalProvider(
+        LocalFinanceColors provides financeColors
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }
+

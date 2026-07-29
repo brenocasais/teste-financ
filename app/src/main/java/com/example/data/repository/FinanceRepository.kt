@@ -23,6 +23,9 @@ class FinanceRepository(
     private val notificationLogDao: NotificationLogDao
 ) {
     // --- NOTIFICATION LOGS ---
+    fun getNotificationLogsFlow(userId: String): Flow<List<NotificationLog>> =
+        notificationLogDao.getNotificationLogsFlow(userId)
+
     suspend fun getNotificationLog(userId: String, type: String, referenceId: String?, referenceMonth: String?): NotificationLog? =
         notificationLogDao.getLog(userId, type, referenceId, referenceMonth)
 

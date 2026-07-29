@@ -15,6 +15,7 @@ class UserPreferences(private val context: Context) {
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         private val ONBOARDING_COMPLETED_KEY = booleanPreferencesKey("onboarding_completed")
         private val IS_GUEST_MODE_KEY = booleanPreferencesKey("is_guest_mode")
+        private val HIDE_VALUES_KEY = booleanPreferencesKey("hide_values")
 
         private val NOTIFY_LIMITS_KEY = booleanPreferencesKey("notify_limits")
         private val NOTIFY_CREDIT_CARD_KEY = booleanPreferencesKey("notify_credit_card")
@@ -102,6 +103,16 @@ class UserPreferences(private val context: Context) {
 
     val isGuestModeFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[IS_GUEST_MODE_KEY] ?: false
+    }
+
+    val hideValuesFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[HIDE_VALUES_KEY] ?: false
+    }
+
+    suspend fun setHideValues(hide: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[HIDE_VALUES_KEY] = hide
+        }
     }
 
     suspend fun setThemeMode(mode: String) {

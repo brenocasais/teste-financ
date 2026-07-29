@@ -74,6 +74,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isGuestMode: StateFlow<Boolean> = userPreferences.isGuestModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val hideValues: StateFlow<Boolean> = userPreferences.hideValuesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun toggleHideValues() {
+        viewModelScope.launch {
+            userPreferences.setHideValues(!hideValues.value)
+        }
+    }
+
     // --- Authentication states ---
     val authState: StateFlow<AuthManager.AuthState> = authManager.authState
 

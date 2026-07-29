@@ -102,25 +102,27 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Global header visible across all screens
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SyncStatusBar(
-                    userId = userId,
-                    syncState = syncState,
-                    onSyncClick = { viewModel.triggerPush() }
-                )
-                
-                GlobalMonthSelector(
-                    selectedMonthCalendar = selectedMonthCalendar,
-                    onMonthChange = { newCal -> viewModel.setSelectedMonth(newCal) },
-                    onCurrentMonthClick = { viewModel.selectCurrentMonth() }
-                )
+            // Global header visible across other screens (hidden on Dashboard tab which has its own Onda 3 header)
+            if (selectedTab != 0) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SyncStatusBar(
+                        userId = userId,
+                        syncState = syncState,
+                        onSyncClick = { viewModel.triggerPush() }
+                    )
+                    
+                    GlobalMonthSelector(
+                        selectedMonthCalendar = selectedMonthCalendar,
+                        onMonthChange = { newCal -> viewModel.setSelectedMonth(newCal) },
+                        onCurrentMonthClick = { viewModel.selectCurrentMonth() }
+                    )
+                }
             }
 
             Box(
@@ -157,7 +159,10 @@ fun MainScreen(
                     label = "TabTransition"
                 ) { targetTab ->
                     when (targetTab) {
-                        0 -> DashboardTab(viewModel)
+                        0 -> DashboardScreen(
+                            viewModel = viewModel,
+                            onNavigateToTab = { tab -> selectedTab = tab }
+                        )
                         1 -> TransactionsScreen(viewModel)
                         2 -> PlanningScreen(viewModel)
                         3 -> MetricsScreen(viewModel)

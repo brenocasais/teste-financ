@@ -34,6 +34,9 @@ class AuthManager {
             else -> ""
         }
 
+    val currentUser: FirebaseUser?
+        get() = firebaseAuth.currentUser
+
     fun isUserLoggedIn(): Boolean {
         return _authState.value is AuthState.Authenticated || _authState.value is AuthState.Guest
     }

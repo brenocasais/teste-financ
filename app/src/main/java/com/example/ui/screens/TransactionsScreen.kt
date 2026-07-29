@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -88,8 +90,17 @@ fun TransactionsScreen(
 
     var selectedTypeFilter by remember { mutableStateOf("TODAS") } // TODAS, RECEITA, DESPESA, TRANSFERENCIA
     var selectedAccountFilter by remember { mutableStateOf<Account?>(null) } // null means "Todas as Contas"
+    var selectedCategoryFilter by remember { mutableStateOf<Category?>(null) }
+    var selectedSubcategoryFilter by remember { mutableStateOf<Subcategory?>(null) }
+    var selectedOnlyCreditCards by remember { mutableStateOf(false) }
+    var selectedRecurrenceFilter by remember { mutableStateOf("TODAS") } // TODAS, RECORRENTES, NAO_RECORRENTES
+    var selectedInstallmentFilter by remember { mutableStateOf("TODAS") } // TODAS, PARCELADAS, NAO_PARCELADAS
+    var minValueFilterString by remember { mutableStateOf("") }
+    var maxValueFilterString by remember { mutableStateOf("") }
 
-    // Dialog states
+    // Dialog & BottomSheet states
+    var showFilterBottomSheet by remember { mutableStateOf(false) }
+    var showMonthPicker by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
 
@@ -106,8 +117,28 @@ fun TransactionsScreen(
         SimpleDateFormat("yyyy-MM", Locale.US).format(selectedMonthCalendar.time)
     }
 
+    // Previous month for comparison
+    val prevMonthString = remember(selectedMonthCalendar) {
+        val prevCal = selectedMonthCalendar.clone() as Calendar
+        prevCal.add(Calendar.MONTH, -1)
+        SimpleDateFormat("yyyy-MM", Locale.US).format(prevCal.time)
+    }
+    val prevMonthShortName = remember(selectedMonthCalendar) {
+        val prevCal = selectedMonthCalendar.clone() as Calendar
+        prevCal.add(Calendar.MONTH, -1)
+        SimpleDateFormat("MMM", Locale("pt", "BR")).format(prevCal.time).lowercase()
+    }
+
     // Filter transactions
-    val filteredTransactions = remember(transactions, yearMonthString, searchQuery, selectedTypeFilter, selectedAccountFilter, categories, subcategories) {
+    val filteredTransactions = remember(
+        transactions, yearMonthString, searchQuery, selectedTypeFilter, selectedAccountFilter,
+        selectedCategoryFilter, selectedSubcategoryFilter, selectedOnlyCreditCards,
+        selectedRecurrenceFilter, selectedInstallmentFilter, minValueFilterString, maxValueFilterString,
+        categories, subcategories, accounts
+    ) {
+        val minVal = minValueFilterString.replace(",", ".").toDoubleOrNull()
+        val maxVal = maxValueFilterString.replace(",", ".").toDoubleOrNull()
+
         transactions.filter { tx ->
             // Filter by Period (YYYY-MM)
             val matchesPeriod = tx.date.startsWith(yearMonthString)
@@ -124,9 +155,32 @@ fun TransactionsScreen(
             // Filter by Account
             val matchesAccount = if (selectedAccountFilter != null) {
                 tx.account_id == selectedAccountFilter!!.id || tx.to_account_id == selectedAccountFilter!!.id
+            } else if (selectedOnlyCreditCards) {
+                val acc = accounts.find { it.id == tx.account_id }
+                acc?.type == "CARTAO_CREDITO"
             } else {
                 true
             }
+
+            // Filter by Category & Subcategory
+            val matchesCategory = if (selectedCategoryFilter != null) tx.category_id == selectedCategoryFilter!!.id else true
+            val matchesSubcategory = if (selectedSubcategoryFilter != null) tx.subcategory_id == selectedSubcategoryFilter!!.id else true
+
+            // Filter by Recurrence & Installment
+            val matchesRecurrence = when (selectedRecurrenceFilter) {
+                "RECORRENTES" -> tx.recurrence_rule_id != null
+                "NAO_RECORRENTES" -> tx.recurrence_rule_id == null
+                else -> true
+            }
+            val matchesInstallment = when (selectedInstallmentFilter) {
+                "PARCELADAS" -> tx.installment_plan_id != null
+                "NAO_PARCELADAS" -> tx.installment_plan_id == null
+                else -> true
+            }
+
+            // Filter by Min/Max Value
+            val matchesMin = minVal == null || tx.value >= minVal
+            val matchesMax = maxVal == null || tx.value <= maxVal
 
             // Filter by Search Query (description, category name, subcategory name)
             val matchesSearch = if (searchQuery.isNotBlank()) {
@@ -139,7 +193,8 @@ fun TransactionsScreen(
                 true
             }
 
-            matchesPeriod && matchesType && matchesAccount && matchesSearch
+            matchesPeriod && matchesType && matchesAccount && matchesCategory && matchesSubcategory &&
+                    matchesRecurrence && matchesInstallment && matchesMin && matchesMax && matchesSearch
         }
     }
 
@@ -160,21 +215,107 @@ fun TransactionsScreen(
     }
     val filteredNet = filteredIncome - filteredExpense
 
+    // Comparison vs previous month calculation
+    val prevMonthIncome = remember(transactions, prevMonthString) {
+        transactions.filter { it.date.startsWith(prevMonthString) && it.type == "RECEITA" }.sumOf { it.value }
+    }
+    val prevMonthExpense = remember(transactions, prevMonthString) {
+        transactions.filter { it.date.startsWith(prevMonthString) && it.type == "DESPESA" }.sumOf { it.value }
+    }
+
+    val incomeVarPercent = remember(filteredIncome, prevMonthIncome) {
+        if (prevMonthIncome > 0) ((filteredIncome - prevMonthIncome) / prevMonthIncome) * 100.0 else 0.0
+    }
+    val expenseVarPercent = remember(filteredExpense, prevMonthExpense) {
+        if (prevMonthExpense > 0) ((filteredExpense - prevMonthExpense) / prevMonthExpense) * 100.0 else 0.0
+    }
+    val budgetUsagePercent = remember(filteredIncome, filteredExpense) {
+        if (filteredIncome > 0) (filteredExpense / filteredIncome * 100.0).toInt().coerceIn(0, 999) else 0
+    }
+
+    // Grouping transactions by date
+    val groupedTransactions = remember(transactionsToShow) {
+        transactionsToShow
+            .sortedByDescending { it.date }
+            .groupBy { getDateGroupLabel(it.date) }
+    }
+
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) Color(0xFF13191B) else Color(0xFFFAFAFB)
+    val cardBgColor = if (isDark) Color(0xFF1C2427) else Color(0xFFFFFFFF)
+    val cardBorderColor = if (isDark) Color(0xFF283438) else Color(0xFFE5E7EC)
+    val primaryTextColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
+    val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
+
+    val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+    val blueColor = if (isDark) Color(0xFF38BDF8) else Color(0xFF3B82F6)
+
+    val hasActiveFilters = selectedAccountFilter != null || selectedCategoryFilter != null ||
+            selectedSubcategoryFilter != null || selectedOnlyCreditCards ||
+            selectedRecurrenceFilter != "TODAS" || selectedInstallmentFilter != "TODAS" ||
+            minValueFilterString.isNotEmpty() || maxValueFilterString.isNotEmpty()
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(bgColor)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 10.dp, vertical = 10.dp)
         ) {
+            // === 1. CABEÇALHO ===
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp, start = 4.dp, end = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Transações",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
+                )
+
+                // Seletor compacto de mês
+                Surface(
+                    onClick = { showMonthPicker = true },
+                    shape = RoundedCornerShape(10.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, cardBorderColor)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = periodString,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Selecionar Mês",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            // Highlighting banner if applicable
             if (highlightedTransaction != null) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
+                        .padding(bottom = 10.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
@@ -182,7 +323,7 @@ fun TransactionsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -197,7 +338,7 @@ fun TransactionsScreen(
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Filtro do Planejamento",
                                 style = MaterialTheme.typography.titleMedium,
@@ -212,165 +353,252 @@ fun TransactionsScreen(
                 }
             }
 
-            // 2. BUSCA & CONTA FILTRO ROW
+            // === 2. CAMPO DE BUSCA & ÍCONE DE FILTROS (Tamanho compacto ~42dp igual Planejamento) ===
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = {
-                        searchQuery = it
-                        viewModel.transactionSearchQuery.value = it
-                    },
-                    placeholder = { Text("Buscar transação...", fontSize = 14.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = {
-                                searchQuery = ""
-                                viewModel.transactionSearchQuery.value = ""
-                            }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Limpar busca")
-                            }
-                        }
-                    },
+                Surface(
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-                    )
-                )
-
-                // Filtro por Conta
-                var showAccountDropdown by remember { mutableStateOf(false) }
-                Box {
-                    Button(
-                        onClick = { showAccountDropdown = true },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.height(56.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = selectedAccountFilter?.name ?: "Todas Contas",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = showAccountDropdown,
-                        onDismissRequest = { showAccountDropdown = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Todas as Contas") },
-                            onClick = {
-                                selectedAccountFilter = null
-                                showAccountDropdown = false
-                            }
-                        )
-                        accounts.forEach { acc ->
-                            DropdownMenuItem(
-                                text = { Text(acc.name) },
-                                onClick = {
-                                    selectedAccountFilter = acc
-                                    showAccountDropdown = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 3. FILTRO POR TIPO (Todas / Receitas / Despesas / Transferências)
-            val typeFilters = listOf(
-                FilterTypeItem("Todas", "TODAS"),
-                FilterTypeItem("Receitas", "RECEITA"),
-                FilterTypeItem("Despesas", "DESPESA"),
-                FilterTypeItem("Transf.", "TRANSFERENCIA")
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                typeFilters.forEach { filterItem ->
-                    val isSelected = selectedTypeFilter == filterItem.id
-                    Box(
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, cardBorderColor)
+                ) {
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                            )
-                            .clickable { selectedTypeFilter = filterItem.id }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = filterItem.label,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Buscar",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Buscar transação...",
+                                    fontSize = 13.sp,
+                                    color = secondaryTextColor
+                                )
+                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    viewModel.transactionSearchQuery.value = it
+                                },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 13.sp,
+                                    color = primaryTextColor
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    viewModel.transactionSearchQuery.value = ""
+                                },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Limpar busca",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Botão de filtros compacto
+                Surface(
+                    onClick = { showFilterBottomSheet = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (hasActiveFilters) greenColor.copy(alpha = 0.15f) else cardBgColor,
+                    border = BorderStroke(1.dp, if (hasActiveFilters) greenColor else cardBorderColor),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Filtros Avançados",
+                            tint = if (hasActiveFilters) greenColor else secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        if (hasActiveFilters) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(greenColor)
+                                    .align(Alignment.TopEnd)
+                                    .padding(3.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 4. CARD DE RESUMO DO QUE ESTÁ FILTRADO
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            // === 3. CARD DE RESUMO (Receitas, Despesas, Saldo) SEM EMOJIS E ALTURA REDUZIDA ===
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor,
+                border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MiniSummaryItem(
-                        title = "Receitas",
-                        value = "R$ %.2f".format(filteredIncome),
-                        color = MaterialTheme.colorScheme.primary
+                    // RECEITAS
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text("Receitas", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = formatBrl(filteredIncome),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (prevMonthIncome > 0) {
+                                val arrow = if (incomeVarPercent >= 0) "↑" else "↓"
+                                "$arrow ${"%.0f".format(kotlin.math.abs(incomeVarPercent))}% vs $prevMonthShortName."
+                            } else "100% vs $prevMonthShortName.",
+                            fontSize = 11.sp,
+                            color = greenColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    VerticalDivider(
+                        modifier = Modifier
+                            .height(48.dp)
+                            .padding(horizontal = 4.dp),
+                        color = cardBorderColor
                     )
-                    VerticalDivider(modifier = Modifier.height(30.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    MiniSummaryItem(
-                        title = "Despesas",
-                        value = "R$ %.2f".format(filteredExpense),
-                        color = MaterialTheme.colorScheme.error
+
+                    // DESPESAS
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text("Despesas", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = formatBrl(filteredExpense),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (prevMonthExpense > 0) {
+                                val arrow = if (expenseVarPercent >= 0) "↑" else "↓"
+                                "$arrow ${"%.0f".format(kotlin.math.abs(expenseVarPercent))}% vs $prevMonthShortName."
+                            } else "100% vs $prevMonthShortName.",
+                            fontSize = 11.sp,
+                            color = redColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    VerticalDivider(
+                        modifier = Modifier
+                            .height(48.dp)
+                            .padding(horizontal = 4.dp),
+                        color = cardBorderColor
                     )
-                    VerticalDivider(modifier = Modifier.height(30.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    MiniSummaryItem(
-                        title = "Saldo Filtrado",
-                        value = "R$ %.2f".format(filteredNet),
-                        color = if (filteredNet >= 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
-                    )
+
+                    // SALDO
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text("Saldo", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = formatBrl(filteredNet),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "$budgetUsagePercent% do orçamento",
+                            fontSize = 11.sp,
+                            color = secondaryTextColor,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 5. LISTA DE TRANSAÇÕES (Com 3 Estados)
-            // Note: In Phase 2, we assume Room load completes instantly, so we check data size or state.
+            // === 4. FILTROS (CHIPS: Todas / Receitas / Despesas / Transferências) ===
+            val filterChips = listOf(
+                FilterTypeItem("Todas", "TODAS"),
+                FilterTypeItem("Receitas", "RECEITA"),
+                FilterTypeItem("Despesas", "DESPESA"),
+                FilterTypeItem("Transferências", "TRANSFERENCIA")
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                filterChips.forEach { chip ->
+                    val isSelected = selectedTypeFilter == chip.id
+                    Surface(
+                        onClick = { selectedTypeFilter = chip.id },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) greenColor.copy(alpha = 0.15f) else cardBgColor,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) greenColor else cardBorderColor
+                        )
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = chip.label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) greenColor else secondaryTextColor
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // === 5. LISTA DE TRANSAÇÕES AGRUPADAS POR DATA ===
             if (transactionsToShow.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -387,33 +615,43 @@ fun TransactionsScreen(
                             Icons.Default.ReceiptLong,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                            tint = greenColor.copy(alpha = 0.4f)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "Nenhuma transação encontrada",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = primaryTextColor
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = if (searchQuery.isNotEmpty() || selectedTypeFilter != "TODAS" || selectedAccountFilter != null) {
+                            text = if (searchQuery.isNotEmpty() || selectedTypeFilter != "TODAS" || hasActiveFilters) {
                                 "Tente limpar os filtros ou realizar outra busca."
                             } else {
-                                "Nenhum lançamento para este período. Clique no botão + abaixo para cadastrar a primeira transação!"
+                                "Nenhum lançamento para este período."
                             },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                            color = secondaryTextColor,
                             textAlign = TextAlign.Center
                         )
-                        if (searchQuery.isNotEmpty() || selectedTypeFilter != "TODAS" || selectedAccountFilter != null) {
+                        if (searchQuery.isNotEmpty() || selectedTypeFilter != "TODAS" || hasActiveFilters) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = {
-                                searchQuery = ""
-                                selectedTypeFilter = "TODAS"
-                                selectedAccountFilter = null
-                            }) {
+                            Button(
+                                onClick = {
+                                    searchQuery = ""
+                                    selectedTypeFilter = "TODAS"
+                                    selectedAccountFilter = null
+                                    selectedCategoryFilter = null
+                                    selectedSubcategoryFilter = null
+                                    selectedOnlyCreditCards = false
+                                    selectedRecurrenceFilter = "TODAS"
+                                    selectedInstallmentFilter = "TODAS"
+                                    minValueFilterString = ""
+                                    maxValueFilterString = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = greenColor)
+                            ) {
                                 Text("Limpar Filtros")
                             }
                         }
@@ -424,30 +662,65 @@ fun TransactionsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(transactionsToShow, key = { it.id }) { tx ->
-                        val accOriginName = accounts.find { it.id == tx.account_id }?.name ?: "Desconhecida"
-                        val accDestName = if (tx.type == "TRANSFERENCIA") {
-                            accounts.find { it.id == tx.to_account_id }?.name ?: "Desconhecida"
-                        } else null
-
-                        val catName = if (tx.type == "META") {
-                            goals.find { it.id == tx.goal_id }?.let { "Meta: ${it.name}" }
-                        } else {
-                            categories.find { it.id == tx.category_id }?.name
+                    groupedTransactions.forEach { (dateGroupTitle, txList) ->
+                        item(key = "header_$dateGroupTitle") {
+                            Text(
+                                text = dateGroupTitle,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryTextColor,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                            )
                         }
-                        val subName = if (tx.type == "META") null else subcategories.find { it.id == tx.subcategory_id }?.name
 
-                        TransactionItemRow(
-                            transaction = tx,
-                            accountName = accOriginName,
-                            toAccountName = accDestName,
-                            categoryName = catName,
-                            subcategoryName = subName,
-                            installmentPlans = installmentPlans,
-                            onItemClick = { editingTransaction = tx }
-                        )
+                        item(key = "card_$dateGroupTitle") {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                color = cardBgColor,
+                                border = BorderStroke(1.dp, cardBorderColor)
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    txList.forEachIndexed { index, tx ->
+                                        val accOriginName = accounts.find { it.id == tx.account_id }?.name ?: "Desconhecida"
+                                        val accDestName = if (tx.type == "TRANSFERENCIA") {
+                                            accounts.find { it.id == tx.to_account_id }?.name ?: "Desconhecida"
+                                        } else null
+
+                                        val catName = if (tx.type == "META") {
+                                            goals.find { it.id == tx.goal_id }?.let { "Meta: ${it.name}" }
+                                        } else {
+                                            categories.find { it.id == tx.category_id }?.name
+                                        }
+                                        val subName = if (tx.type == "META") null else subcategories.find { it.id == tx.subcategory_id }?.name
+
+                                        NewTransactionRow(
+                                            transaction = tx,
+                                            accountName = accOriginName,
+                                            toAccountName = accDestName,
+                                            categoryName = catName,
+                                            subcategoryName = subName,
+                                            installmentPlans = installmentPlans,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            greenColor = greenColor,
+                                            redColor = redColor,
+                                            blueColor = blueColor,
+                                            onItemClick = { editingTransaction = tx }
+                                        )
+
+                                        if (index < txList.size - 1) {
+                                            HorizontalDivider(
+                                                modifier = Modifier.padding(start = 68.dp, end = 16.dp),
+                                                color = cardBorderColor.copy(alpha = 0.5f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -467,11 +740,276 @@ fun TransactionsScreen(
                     }
                 }
                 .padding(24.dp),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
+            containerColor = greenColor,
+            contentColor = Color.White
         ) {
             Icon(Icons.Default.Add, contentDescription = "Nova Transação")
         }
+    }
+
+    // === BOTTOM SHEET DE FILTROS AVANÇADOS ===
+    if (showFilterBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilterBottomSheet = false },
+            containerColor = cardBgColor
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Filtros de Transação",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                    TextButton(
+                        onClick = {
+                            selectedAccountFilter = null
+                            selectedCategoryFilter = null
+                            selectedSubcategoryFilter = null
+                            selectedOnlyCreditCards = false
+                            selectedRecurrenceFilter = "TODAS"
+                            selectedInstallmentFilter = "TODAS"
+                            minValueFilterString = ""
+                            maxValueFilterString = ""
+                        }
+                    ) {
+                        Text("Limpar", color = redColor)
+                    }
+                }
+
+                // Filter by Account
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Conta", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryTextColor)
+                    var showAccDrop by remember { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(
+                            onClick = { showAccDrop = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = selectedAccountFilter?.name ?: "Todas as Contas",
+                                color = primaryTextColor,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
+                        }
+                        DropdownMenu(
+                            expanded = showAccDrop,
+                            onDismissRequest = { showAccDrop = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Todas as Contas") },
+                                onClick = {
+                                    selectedAccountFilter = null
+                                    showAccDrop = false
+                                }
+                            )
+                            accounts.forEach { acc ->
+                                DropdownMenuItem(
+                                    text = { Text(acc.name) },
+                                    onClick = {
+                                        selectedAccountFilter = acc
+                                        showAccDrop = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Toggle Cartões de Crédito
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Filtrar somente Cartões de Crédito", fontSize = 14.sp, color = primaryTextColor)
+                    Switch(
+                        checked = selectedOnlyCreditCards,
+                        onCheckedChange = { selectedOnlyCreditCards = it }
+                    )
+                }
+
+                // Filter by Category
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Categoria", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryTextColor)
+                    var showCatDrop by remember { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(
+                            onClick = { showCatDrop = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = selectedCategoryFilter?.name ?: "Todas as Categorias",
+                                color = primaryTextColor,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
+                        }
+                        DropdownMenu(
+                            expanded = showCatDrop,
+                            onDismissRequest = { showCatDrop = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Todas as Categorias") },
+                                onClick = {
+                                    selectedCategoryFilter = null
+                                    selectedSubcategoryFilter = null
+                                    showCatDrop = false
+                                }
+                            )
+                            categories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name) },
+                                    onClick = {
+                                        selectedCategoryFilter = cat
+                                        selectedSubcategoryFilter = null
+                                        showCatDrop = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Subcategory Filter (if category selected)
+                if (selectedCategoryFilter != null) {
+                    val subcatsOfCat = subcategories.filter { it.category_id == selectedCategoryFilter!!.id }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Subcategoria", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryTextColor)
+                        var showSubDrop by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { showSubDrop = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = selectedSubcategoryFilter?.name ?: "Todas as Subcategorias",
+                                    color = primaryTextColor,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
+                            }
+                            DropdownMenu(
+                                expanded = showSubDrop,
+                                onDismissRequest = { showSubDrop = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Todas as Subcategorias") },
+                                    onClick = {
+                                        selectedSubcategoryFilter = null
+                                        showSubDrop = false
+                                    }
+                                )
+                                subcatsOfCat.forEach { sub ->
+                                    DropdownMenuItem(
+                                        text = { Text(sub.name) },
+                                        onClick = {
+                                            selectedSubcategoryFilter = sub
+                                            showSubDrop = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Value Range (Min / Max)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Faixa de Valor (R$)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryTextColor)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = minValueFilterString,
+                            onValueChange = { minValueFilterString = it },
+                            label = { Text("Mínimo") },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = maxValueFilterString,
+                            onValueChange = { maxValueFilterString = it },
+                            label = { Text("Máximo") },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                    }
+                }
+
+                // Recurrence filter
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Recorrência", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryTextColor)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("TODAS" to "Todas", "RECORRENTES" to "Recorrentes", "NAO_RECORRENTES" to "Avulsas").forEach { (id, label) ->
+                            val isSel = selectedRecurrenceFilter == id
+                            FilterChip(
+                                selected = isSel,
+                                onClick = { selectedRecurrenceFilter = id },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                }
+
+                // Installments filter
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Parcelamento", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryTextColor)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("TODAS" to "Todas", "PARCELADAS" to "Parceladas", "NAO_PARCELADAS" to "À vista").forEach { (id, label) ->
+                            val isSel = selectedInstallmentFilter == id
+                            FilterChip(
+                                selected = isSel,
+                                onClick = { selectedInstallmentFilter = id },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { showFilterBottomSheet = false },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = greenColor)
+                ) {
+                    Text("Aplicar Filtros", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+    }
+
+    // Month Picker Dialog
+    if (showMonthPicker) {
+        MonthYearPickerDialog(
+            currentCalendar = selectedMonthCalendar,
+            onDismiss = { showMonthPicker = false },
+            onSelected = { year, month ->
+                val newCal = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }
+                viewModel.setSelectedMonth(newCal)
+                showMonthPicker = false
+            }
+        )
     }
 
     // New/Add Dialog
@@ -496,6 +1034,222 @@ fun TransactionsScreen(
             transactionToEdit = editingTransaction,
             onDismiss = { editingTransaction = null }
         )
+    }
+}
+
+// === NOVO COMPONENTE DE LINHA DE TRANSAÇÃO REDESENHADO ===
+@Composable
+fun NewTransactionRow(
+    transaction: Transaction,
+    accountName: String,
+    toAccountName: String?,
+    categoryName: String?,
+    subcategoryName: String?,
+    installmentPlans: List<InstallmentPlan>,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    greenColor: Color,
+    redColor: Color,
+    blueColor: Color,
+    onItemClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clickable { onItemClick() }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Icon circular badge
+        val descLower = transaction.description.lowercase()
+        val (icon, badgeBg) = when {
+            descLower.contains("franguinho") || descLower.contains("almoço") || descLower.contains("restaurante") || descLower.contains("jantar") ->
+                Icons.Default.Restaurant to Color(0xFFF97316)
+            descLower.contains("uber") || descLower.contains("99") || descLower.contains("transporte") || descLower.contains("táxi") ->
+                Icons.Default.DirectionsCar to Color(0xFF1E293B)
+            descLower.contains("salário") || descLower.contains("pagamento") || descLower.contains("renda") ->
+                Icons.Default.AccountBalanceWallet to greenColor
+            descLower.contains("mercado") || descLower.contains("supermercado") || descLower.contains("compras") ->
+                Icons.Default.ShoppingCart to redColor
+            descLower.contains("netflix") || descLower.contains("lazer") || descLower.contains("cinema") ->
+                Icons.Default.Tv to Color(0xFF111827)
+            transaction.type == "RECEITA" -> Icons.Default.TrendingUp to greenColor
+            transaction.type == "DESPESA" -> Icons.Default.TrendingDown to redColor
+            transaction.type == "TRANSFERENCIA" -> Icons.Default.SwapHoriz to blueColor
+            else -> Icons.Default.Flag to blueColor
+        }
+
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(badgeBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transaction.description,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(1.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = buildString {
+                            if (transaction.type == "TRANSFERENCIA") {
+                                append("$accountName → $toAccountName")
+                            } else {
+                                if (categoryName != null) {
+                                    append(categoryName)
+                                    append(" • ")
+                                }
+                                append(accountName)
+                            }
+                        },
+                        fontSize = 12.sp,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    // Installment badge ("2/3")
+                    val plan = installmentPlans.find { it.id == transaction.installment_plan_id }
+                    if (plan != null && transaction.installment_number != null) {
+                        Surface(
+                            color = greenColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "${transaction.installment_number}/${plan.installments_count}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = greenColor,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+
+                    // Recurrence icon
+                    if (transaction.recurrence_rule_id != null) {
+                        Icon(
+                            imageVector = Icons.Default.Autorenew,
+                            contentDescription = "Recorrente",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+
+                    // Attachment icon
+                    if (transaction.attachment_uri != null) {
+                        Icon(
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = "Comprovante",
+                            tint = greenColor,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Right side: Value & Time/Date
+        Column(horizontalAlignment = Alignment.End) {
+            val (prefix, valueColor) = when (transaction.type) {
+                "RECEITA" -> "+ " to greenColor
+                "DESPESA" -> "- " to redColor
+                "TRANSFERENCIA" -> "- " to blueColor
+                else -> "- " to redColor
+            }
+            Text(
+                text = "$prefix${formatBrl(transaction.value)}",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = valueColor
+            )
+            Spacer(modifier = Modifier.height(1.dp))
+
+            // Time or short date format (e.g., "12:45" or "20 jul")
+            val timeOrDateStr = remember(transaction.date) {
+                try {
+                    val parts = transaction.date.split("-")
+                    if (parts.size == 3) {
+                        val day = parts[2]
+                        val monthNum = parts[1].toIntOrNull() ?: 1
+                        val months = listOf("", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez")
+                        "$day ${months.getOrElse(monthNum) { "" }}"
+                    } else transaction.date
+                } catch (e: Exception) {
+                    transaction.date
+                }
+            }
+            Text(
+                text = timeOrDateStr,
+                fontSize = 11.sp,
+                color = secondaryTextColor
+            )
+        }
+    }
+}
+
+// Helper to format BRL currency
+private fun formatBrl(value: Double): String {
+    val formatter = java.text.NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
+    return formatter.format(value)
+}
+
+// Helper to calculate date group label
+private fun getDateGroupLabel(dateStr: String): String {
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val date = sdf.parse(dateStr) ?: return dateStr
+        val calDate = Calendar.getInstance().apply { time = date }
+        val calToday = Calendar.getInstance()
+
+        val isSameYear = calDate.get(Calendar.YEAR) == calToday.get(Calendar.YEAR)
+        val dayOfYearDate = calDate.get(Calendar.DAY_OF_YEAR)
+        val dayOfYearToday = calToday.get(Calendar.DAY_OF_YEAR)
+
+        if (isSameYear && dayOfYearDate == dayOfYearToday) {
+            "Hoje"
+        } else if (isSameYear && dayOfYearDate == dayOfYearToday - 1) {
+            "Ontem"
+        } else {
+            val diffMs = calToday.timeInMillis - calDate.timeInMillis
+            val diffDays = diffMs / (24 * 60 * 60 * 1000)
+            if (diffDays in 0..6 && isSameYear) {
+                val dayOfWeekFormat = SimpleDateFormat("EEEE", Locale("pt", "BR"))
+                dayOfWeekFormat.format(date).replaceFirstChar { it.uppercase() }
+            } else {
+                val fullDateFormat = SimpleDateFormat("d 'de' MMMM 'de' yyyy", Locale("pt", "BR"))
+                fullDateFormat.format(date)
+            }
+        }
+    } catch (e: Exception) {
+        dateStr
     }
 }
 

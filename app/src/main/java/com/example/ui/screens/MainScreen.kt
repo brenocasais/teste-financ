@@ -102,8 +102,8 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Global header visible across other screens (hidden on Dashboard tab which has its own Onda 3 header)
-            if (selectedTab != 0) {
+            // Global header visible across other screens (hidden on Dashboard tab which has its own Onda 3 header and Transactions tab which has its own header)
+            if (selectedTab != 0 && selectedTab != 1) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -259,6 +260,14 @@ fun PlanningScreen(viewModel: MainViewModel) {
     var showRedistributionReportDialog by remember { mutableStateOf(false) }
     var targetEditAllocation by remember { mutableStateOf<Pair<Category, Subcategory?>?>(null) }
     var targetMoveAllocation by remember { mutableStateOf<Pair<Category, Subcategory?>?>(null) }
+    var showMonthPicker by remember { mutableStateOf(false) }
+    var selectedFilter by remember { mutableStateOf("ALL") }
+
+    val monthNameStr = remember(selectedMonthCalendar) {
+        val sdf = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale("pt", "BR"))
+        val formatted = sdf.format(selectedMonthCalendar.time)
+        formatted.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale("pt", "BR")) else it.toString() }
+    }
 
     // Active expanded categories inside the tree
     var expandedCategoryIds by remember { mutableStateOf(setOf<Int>()) }
@@ -393,6 +402,48 @@ fun PlanningScreen(viewModel: MainViewModel) {
         }
     }
 
+    val filteredCategoriesByState by remember(filteredCategoriesWithGoals, selectedFilter, allocationInfoMap, spentInfoMap, prevSobraMap, subcategories, goalPlannedValues, goalAllocatedValues) {
+        derivedStateOf {
+            if (selectedFilter == "ALL") {
+                filteredCategoriesWithGoals
+            } else {
+                filteredCategoriesWithGoals.filter { cat ->
+                    val subs = if (cat.id == -999) virtualGoalSubcategories else subcategories.filter { it.category_id == cat.id }
+                    var catPlanejado = 0.0
+                    var catAlocado = 0.0
+                    var catGasto = 0.0
+
+                    if (cat.id == -999) {
+                        subs.forEach { sub ->
+                            val gId = -sub.id - 1000
+                            catPlanejado += goalPlannedValues[gId] ?: 0.0
+                            catAlocado += goalAllocatedValues[gId] ?: 0.0
+                        }
+                    } else if (subs.isEmpty()) {
+                        val info = allocationInfoMap[Pair(cat.id, null)]
+                        catPlanejado = info?.first ?: 0.0
+                        catAlocado = (info?.second ?: 0.0) + (prevSobraMap[Pair(cat.id, null)] ?: 0.0)
+                        catGasto = spentInfoMap[Pair(cat.id, null)] ?: 0.0
+                    } else {
+                        subs.forEach { sub ->
+                            val info = allocationInfoMap[Pair(cat.id, sub.id)]
+                            catPlanejado += info?.first ?: 0.0
+                            catAlocado += (info?.second ?: 0.0) + (prevSobraMap[Pair(cat.id, sub.id)] ?: 0.0)
+                            catGasto += spentInfoMap[Pair(cat.id, sub.id)] ?: 0.0
+                        }
+                    }
+
+                    when (selectedFilter) {
+                        "ALERT" -> catPlanejado != catAlocado || (catAlocado > 0 && catGasto / catAlocado >= 0.8 && catGasto <= catAlocado)
+                        "EXCEEDED" -> catGasto > catAlocado || (catAlocado == 0.0 && catGasto > 0.0)
+                        "AVAILABLE" -> (catAlocado - catGasto) > 0
+                        else -> true
+                    }
+                }
+            }
+        }
+    }
+
     // Categories start collapsed by default
 
     var expandedActionPanelId by remember { mutableStateOf<String?>(null) }
@@ -482,15 +533,62 @@ fun PlanningScreen(viewModel: MainViewModel) {
             }
         )
     } else {
+        val isDark = isSystemInDarkTheme()
+        val bgColor = if (isDark) Color(0xFF0D1315) else Color(0xFFFAFAFB)
+        val cardBgColor = if (isDark) Color(0xFF172022) else Color(0xFFFFFFFF)
+        val cardBorderColor = if (isDark) Color(0xFF283438) else Color(0xFFE6E9EC)
+        val primaryTextColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
+        val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
+        val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+        val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp)
+                .background(bgColor)
+                .padding(horizontal = 10.dp)
         ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
+                // Header (Título "Planejamento" + Month selector compacto "Julho 2026")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Planejamento",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { showMonthPicker = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = monthNameStr,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Selecionar Mês",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
                 if (showClosureBanner) {
                     MonthClosureBanner(
                         monthName = formatMonthPortuguese(prevMonthStr),
@@ -498,274 +596,335 @@ fun PlanningScreen(viewModel: MainViewModel) {
                         saldoPrevMonthText = saldoPrevMonthText,
                         onClick = { showMonthClosureScreen = true }
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                // "Pronto para Atribuir" Header Card (SHRUNK)
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                // Card de Resumo (Altura reduzida em 20%)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, cardBorderColor)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Pronto para Atribuir",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = currencyFormatter.format(prontoParaAtribuir),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black,
-                                color = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                modifier = Modifier.testTag("pronto_para_atribuir_value")
-                            )
-                        }
-
-                        // Elegant vertical divider
-                        Box(
-                            modifier = Modifier
-                                .height(36.dp)
-                                .width(1.dp)
-                                .background(
-                                    if (prontoParaAtribuir >= 0) 
-                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f) 
-                                    else 
-                                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.2f)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text(
+                                    text = "Pronto para atribuir",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = secondaryTextColor
                                 )
-                        )
+                                Spacer(modifier = Modifier.height(1.dp))
+                                Text(
+                                    text = currencyFormatter.format(prontoParaAtribuir),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (prontoParaAtribuir >= 0) greenColor else redColor,
+                                    modifier = Modifier.testTag("pronto_para_atribuir_value")
+                                )
+                            }
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                text = "Sobra Mês Anterior",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                            Box(
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .width(1.dp)
+                                    .background(cardBorderColor)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = currencyFormatter.format(realEconomizadoPrevMonth),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black,
-                                color = if (realEconomizadoPrevMonth >= 0) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Button(
-                            onClick = { showDistributeDialog = true },
-                            modifier = Modifier.weight(1.1f),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp)
-                        ) {
-                            Icon(Icons.Default.CallSplit, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Distribuir", fontSize = 10.sp)
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 12.dp),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text(
+                                    text = "Sobra do mês anterior",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = secondaryTextColor
+                                )
+                                Spacer(modifier = Modifier.height(1.dp))
+                                Text(
+                                    text = currencyFormatter.format(realEconomizadoPrevMonth),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (realEconomizadoPrevMonth >= 0) greenColor else redColor
+                                )
+                            }
                         }
 
-                        OutlinedButton(
-                            onClick = { showNewEnvelopeDialog = true },
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-                            ),
-                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp)
+                        // Três Ações: Distribuir, Nova Categoria, Relatório (Botões compactos)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Novo Envelope", fontSize = 10.sp)
-                        }
+                            Button(
+                                onClick = { showDistributeDialog = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(34.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = greenColor.copy(alpha = 0.2f),
+                                    contentColor = greenColor
+                                ),
+                                elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp)
+                            ) {
+                                Icon(Icons.Default.CallSplit, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Distribuir", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
 
-                        OutlinedButton(
-                            onClick = { showRedistributionReportDialog = true },
-                            modifier = Modifier.weight(1.1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (prontoParaAtribuir >= 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-                            ),
-                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp)
-                        ) {
-                            Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Relatório", fontSize = 10.sp)
+                            OutlinedButton(
+                                onClick = { showNewEnvelopeDialog = true },
+                                modifier = Modifier
+                                    .weight(1.1f)
+                                    .height(34.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                                border = BorderStroke(1.dp, cardBorderColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Nova Categoria", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
+
+                            OutlinedButton(
+                                onClick = { showRedistributionReportDialog = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(34.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                                border = BorderStroke(1.dp, cardBorderColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor)
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Relatório", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
                         }
                     }
                 }
-            }
 
-            // Search field (compact height with centered text)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(36.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0xFFE4E6EA), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Campo de busca compacto
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Buscar",
-                        modifier = Modifier.size(15.dp),
-                        tint = Color(0xFF73777F)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                        if (searchQuery.isEmpty()) {
-                            Text("Buscar categoria ou subcategoria...", fontSize = 11.sp, color = Color(0xFF73777F))
-                        }
-                        BasicTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            singleLine = true,
-                            textStyle = TextStyle(
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Normal
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    if (searchQuery.isNotEmpty()) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "Limpar",
-                            tint = Color(0xFF73777F),
-                            modifier = Modifier
-                                .size(14.dp)
-                                .clickable { searchQuery = "" }
-                        )
-                    }
-                }
-            }
-
-            // List Content (Category -> Subcategory hierarchy)
-            Box(modifier = Modifier.weight(1f)) {
-                if (categories.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .background(cardBgColor, RoundedCornerShape(10.dp))
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxSize()
                         ) {
                             Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Buscar",
+                                modifier = Modifier.size(18.dp),
+                                tint = secondaryTextColor
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                                if (searchQuery.isEmpty()) {
+                                    Text("Buscar categoria ou subcategoria", fontSize = 13.sp, color = secondaryTextColor)
+                                }
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    singleLine = true,
+                                    textStyle = TextStyle(
+                                        fontSize = 13.sp,
+                                        color = primaryTextColor,
+                                        fontWeight = FontWeight.Normal
+                                    ),
+                                    cursorBrush = SolidColor(greenColor),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            if (searchQuery.isNotEmpty()) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Limpar",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { searchQuery = "" }
+                                )
+                            }
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(cardBgColor, RoundedCornerShape(10.dp))
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(10.dp))
+                            .clickable {
+                                selectedFilter = if (selectedFilter == "ALL") "ALERT" else "ALL"
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Filtros",
+                            tint = if (selectedFilter != "ALL") greenColor else secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Chips de filtro por estado compactos
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val filters = listOf(
+                        "ALL" to "Todas",
+                        "ALERT" to "Alertas",
+                        "EXCEEDED" to "Excedidas",
+                        "AVAILABLE" to "Disponíveis"
+                    )
+
+                    filters.forEach { (key, label) ->
+                        val isSelected = selectedFilter == key
+                        Box(
+                            modifier = Modifier
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (isSelected) greenColor.copy(alpha = 0.15f) else cardBgColor)
+                                .border(
+                                    BorderStroke(1.dp, if (isSelected) greenColor else cardBorderColor),
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .clickable { selectedFilter = key }
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                text = "Nenhuma categoria cadastrada",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) greenColor else secondaryTextColor
                             )
                         }
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(vertical = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        filteredCategoriesWithGoals.forEach { cat ->
-                            val isCatExpanded = if (searchQuery.isNotEmpty()) true else expandedCategoryIds.contains(cat.id)
-                            val subsInCat = if (cat.id == -999) {
-                                virtualGoalSubcategories
-                            } else if (searchQuery.isEmpty()) {
-                                subcategories.filter { it.category_id == cat.id }
-                            } else {
-                                subcategories.filter { sub ->
-                                    sub.category_id == cat.id && (
-                                        cat.name.contains(searchQuery, ignoreCase = true) ||
-                                        sub.name.contains(searchQuery, ignoreCase = true)
-                                    )
-                                }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // List Content (Category -> Subcategory hierarchy)
+                Box(modifier = Modifier.weight(1f)) {
+                    if (filteredCategoriesByState.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(44.dp),
+                                    tint = secondaryTextColor.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = if (searchQuery.isNotEmpty() || selectedFilter != "ALL") "Nenhuma categoria encontrada" else "Nenhuma categoria cadastrada",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = secondaryTextColor.copy(alpha = 0.7f)
+                                )
                             }
-
-                            // Compute category totals purely from subcategories
-                            var catPlanejado = 0.0
-                            var catAlocado = 0.0
-                            var catGasto = 0.0
-
-                            if (cat.id == -999) {
-                                virtualGoalSubcategories.forEach { sub ->
-                                    val gId = -sub.id - 1000
-                                    val subPlanejado = goalPlannedValues[gId] ?: 0.0
-                                    val subAlocado = goalAllocatedValues[gId] ?: 0.0
-                                    catPlanejado += subPlanejado
-                                    catAlocado += subAlocado
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filteredCategoriesByState, key = { "cat_${it.id}" }) { cat ->
+                                val isCatExpanded = if (searchQuery.isNotEmpty()) true else expandedCategoryIds.contains(cat.id)
+                                val subsInCat = if (cat.id == -999) {
+                                    virtualGoalSubcategories
+                                } else if (searchQuery.isEmpty()) {
+                                    subcategories.filter { it.category_id == cat.id }
+                                } else {
+                                    subcategories.filter { sub ->
+                                        sub.category_id == cat.id && (
+                                            cat.name.contains(searchQuery, ignoreCase = true) ||
+                                            sub.name.contains(searchQuery, ignoreCase = true)
+                                        )
+                                    }
                                 }
-                            } else if (subsInCat.isEmpty()) {
-                                val subInfo = allocationInfoMap[Pair(cat.id, null)]
-                                val subPlanejado = subInfo?.first ?: 0.0
-                                val subAlocado = subInfo?.second ?: 0.0
-                                val subGasto = spentInfoMap[Pair(cat.id, null)] ?: 0.0
-                                val prevSobra = prevSobraMap[Pair(cat.id, null)] ?: 0.0
 
-                                catPlanejado = subPlanejado
-                                catAlocado = subAlocado + prevSobra
-                                catGasto = subGasto
-                            } else {
-                                subsInCat.forEach { sub ->
-                                    val subInfo = allocationInfoMap[Pair(cat.id, sub.id)]
-                                    val subPlanejado = subInfo?.first ?: 0.0
-                                    val subAlocado = subInfo?.second ?: 0.0
-                                    val subGasto = spentInfoMap[Pair(cat.id, sub.id)] ?: 0.0
-                                    val prevSobra = prevSobraMap[Pair(cat.id, sub.id)] ?: 0.0
+                                var catPlanejado = 0.0
+                                var catAlocado = 0.0
+                                var catGasto = 0.0
 
-                                    catPlanejado += subPlanejado
-                                    catAlocado += subAlocado + prevSobra
-                                    catGasto += subGasto
+                                if (cat.id == -999) {
+                                    virtualGoalSubcategories.forEach { sub ->
+                                        val gId = -sub.id - 1000
+                                        catPlanejado += goalPlannedValues[gId] ?: 0.0
+                                        catAlocado += goalAllocatedValues[gId] ?: 0.0
+                                    }
+                                } else if (subsInCat.isEmpty()) {
+                                    val subInfo = allocationInfoMap[Pair(cat.id, null)]
+                                    catPlanejado = subInfo?.first ?: 0.0
+                                    catAlocado = (subInfo?.second ?: 0.0) + (prevSobraMap[Pair(cat.id, null)] ?: 0.0)
+                                    catGasto = spentInfoMap[Pair(cat.id, null)] ?: 0.0
+                                } else {
+                                    subsInCat.forEach { sub ->
+                                        val subInfo = allocationInfoMap[Pair(cat.id, sub.id)]
+                                        catPlanejado += subInfo?.first ?: 0.0
+                                        catAlocado += (subInfo?.second ?: 0.0) + (prevSobraMap[Pair(cat.id, sub.id)] ?: 0.0)
+                                        catGasto += spentInfoMap[Pair(cat.id, sub.id)] ?: 0.0
+                                    }
                                 }
-                            }
 
-                            item(key = "cat_${cat.id}") {
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.dp, Color(0xFFE4E6EA)),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                                    border = BorderStroke(1.dp, cardBorderColor),
+                                    elevation = CardDefaults.cardElevation(0.dp)
                                 ) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 6.dp, horizontal = 10.dp)
+                                            .padding(10.dp)
                                     ) {
                                         CategoryRowItem(
                                             category = cat,
@@ -773,7 +932,6 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                             alocado = catAlocado,
                                             gasto = catGasto,
                                             isExpanded = isCatExpanded,
-                                            isActionPanelExpanded = expandedActionPanelId == "cat_${cat.id}",
                                             onToggle = {
                                                 expandedCategoryIds = if (isCatExpanded) {
                                                     expandedCategoryIds - cat.id
@@ -782,6 +940,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                 }
                                             },
                                             onRowClick = {
+                                                // CLICAR NA CATEGORIA SEMPRE EXPANDE/RECOLHE AS SUBCATEGORIAS
                                                 expandedCategoryIds = if (isCatExpanded) {
                                                     expandedCategoryIds - cat.id
                                                 } else {
@@ -792,32 +951,23 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                 if (cat.id != -999) {
                                                     viewModel.showHistoryDialog(cat, null)
                                                 }
-                                            },
-                                            onEditPlanned = { targetEditAllocation = Pair(cat, null) },
-                                            onEditAllocated = { targetAlocarAllocation = Pair(cat, null) },
-                                            onMoveMoney = { targetMoveAllocation = Pair(cat, null) },
-                                            onNewTransaction = { showQuickTransactionDialogFor = Pair(cat, null) },
-                                            onQuickAlign = {
-                                                quickAlignAlocadoToPlanejado(cat, null, catPlanejado, catAlocado)
                                             }
                                         )
 
                                         if (isCatExpanded) {
                                             if (subsInCat.isEmpty()) {
-                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Spacer(modifier = Modifier.height(8.dp))
                                                 Text(
                                                     text = "Nenhuma subcategoria.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = Color(0xFF73777F),
-                                                    modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)
+                                                    fontSize = 12.sp,
+                                                    color = secondaryTextColor,
+                                                    modifier = Modifier.padding(start = 52.dp)
                                                 )
                                             } else {
-                                                Spacer(modifier = Modifier.height(10.dp))
-                                                HorizontalDivider(color = Color(0xFFE4E6EA).copy(alpha = 0.7f))
-                                                Spacer(modifier = Modifier.height(8.dp))
-
+                                                Spacer(modifier = Modifier.height(12.dp))
                                                 subsInCat.forEachIndexed { index, sub ->
                                                     val isActionPanelExpanded = expandedActionPanelId == "sub_${sub.id}"
+                                                    val isLast = index == subsInCat.size - 1
 
                                                     if (cat.id == -999) {
                                                         val gId = -sub.id - 1000
@@ -832,13 +982,12 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                             planejado = subPlanejado,
                                                             alocado = subAlocadoWithRollover,
                                                             gasto = subGasto,
+                                                            isLast = isLast,
                                                             isActionPanelExpanded = isActionPanelExpanded,
                                                             onRowClick = {
                                                                 expandedActionPanelId = if (isActionPanelExpanded) null else "sub_${sub.id}"
                                                             },
-                                                            onRowLongClick = {
-                                                                // No action history for virtual goal subcategories
-                                                            },
+                                                            onRowLongClick = {},
                                                             onEditPlanned = {},
                                                             onEditAllocated = {
                                                                 targetAlocarGoal = goal
@@ -869,6 +1018,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                             planejado = subPlanejado,
                                                             alocado = subAlocadoWithRollover,
                                                             gasto = subGasto,
+                                                            isLast = isLast,
                                                             isActionPanelExpanded = isActionPanelExpanded,
                                                             onRowClick = {
                                                                 expandedActionPanelId = if (isActionPanelExpanded) null else "sub_${sub.id}"
@@ -886,8 +1036,8 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                         )
                                                     }
 
-                                                    if (index < subsInCat.size - 1) {
-                                                        Spacer(modifier = Modifier.height(8.dp))
+                                                    if (!isLast) {
+                                                        Spacer(modifier = Modifier.height(10.dp))
                                                     }
                                                 }
                                             }
@@ -901,6 +1051,21 @@ fun PlanningScreen(viewModel: MainViewModel) {
             }
         }
     }
+
+    if (showMonthPicker) {
+        MonthYearPickerDialog(
+            currentCalendar = selectedMonthCalendar,
+            onDismiss = { showMonthPicker = false },
+            onSelected = { year, month ->
+                val newCal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.YEAR, year)
+                    set(java.util.Calendar.MONTH, month)
+                    set(java.util.Calendar.DAY_OF_MONTH, 1)
+                }
+                viewModel.setSelectedMonth(newCal)
+                showMonthPicker = false
+            }
+        )
     }
 
     // --- DIALOGS IMPLEMENTATION ---
@@ -1823,9 +1988,18 @@ private fun getPlanningAvailabilityInfo(alocado: Double, gasto: Double): Pair<St
     val disponivel = alocado - gasto
     val formatted = formatPlanningMoney(Math.abs(disponivel))
     return if (disponivel >= 0) {
-        Pair("$formatted disponíveis", Color(0xFF25834A))
+        Pair("$formatted disponíveis", Color(0xFF22A45D))
     } else {
-        Pair("$formatted acima", Color(0xFFC93A35))
+        Pair("$formatted acima", Color(0xFFEF4444))
+    }
+}
+
+private fun getPlanningProgressColor(planejado: Double, alocado: Double, gasto: Double): Color {
+    return when {
+        planejado == 0.0 && alocado == 0.0 && gasto == 0.0 -> Color(0xFF9FA9AB)
+        gasto > alocado || (alocado == 0.0 && gasto > 0.0) -> Color(0xFFEF4444)
+        gasto > planejado && planejado > 0.0 -> Color(0xFFF59E0B)
+        else -> Color(0xFF22A45D)
     }
 }
 
@@ -1836,6 +2010,10 @@ fun BudgetValuesGrid(
     gasto: Double,
     isMeta: Boolean = false
 ) {
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
+    val labelColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -1848,13 +2026,14 @@ fun BudgetValuesGrid(
             Text(
                 text = "Planejado",
                 fontSize = 10.sp,
-                color = Color(0xFF73777F)
+                fontWeight = FontWeight.Medium,
+                color = labelColor
             )
             Text(
                 text = formatPlanningMoney(planejado),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = textColor
             )
         }
 
@@ -1866,13 +2045,14 @@ fun BudgetValuesGrid(
             Text(
                 text = "Alocado",
                 fontSize = 10.sp,
-                color = Color(0xFF73777F)
+                fontWeight = FontWeight.Medium,
+                color = labelColor
             )
             Text(
                 text = formatPlanningMoney(alocado),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = textColor
             )
         }
 
@@ -1885,13 +2065,14 @@ fun BudgetValuesGrid(
                 Text(
                     text = "Gasto",
                     fontSize = 10.sp,
-                    color = Color(0xFF73777F)
+                    fontWeight = FontWeight.Medium,
+                    color = labelColor
                 )
                 Text(
                     text = formatPlanningMoney(gasto),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = textColor
                 )
             }
         }
@@ -1904,6 +2085,9 @@ fun BudgetProgressIndicator(
     pctInt: Int,
     progressColor: Color
 ) {
+    val isDark = isSystemInDarkTheme()
+    val trackColor = if (isDark) Color(0xFF202B2E) else Color(0xFFEAEAEA)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -1912,20 +2096,20 @@ fun BudgetProgressIndicator(
             progress = { progressFloat },
             modifier = Modifier
                 .weight(1f)
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp)),
+                .height(5.dp)
+                .clip(RoundedCornerShape(3.dp)),
             color = progressColor,
-            trackColor = Color(0xFFF0F2F5)
+            trackColor = trackColor
         )
 
         Spacer(modifier = Modifier.width(8.dp))
 
         Text(
             text = "$pctInt%",
-            modifier = Modifier.width(36.dp),
+            modifier = Modifier.width(38.dp),
             textAlign = TextAlign.End,
             style = MaterialTheme.typography.bodySmall,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = progressColor
         )
@@ -1945,56 +2129,53 @@ fun CategoryRowItem(
     alocado: Double,
     gasto: Double,
     isExpanded: Boolean,
-    isActionPanelExpanded: Boolean,
     onToggle: () -> Unit,
     showToggle: Boolean = true,
     onRowClick: () -> Unit,
-    onRowLongClick: (() -> Unit)? = null,
-    onEditPlanned: () -> Unit,
-    onEditAllocated: () -> Unit,
-    onMoveMoney: () -> Unit,
-    onNewTransaction: () -> Unit,
-    onQuickAlign: () -> Unit
+    onRowLongClick: (() -> Unit)? = null
 ) {
+    val isDark = isSystemInDarkTheme()
+    val primaryTextColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
+    val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
+
     val isMeta = category.id == -999
     val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto)
-    val isOverLimit = !isMeta && (gasto > alocado && alocado > 0.0 || (alocado == 0.0 && gasto > 0.0))
 
-    val baseVal = if (alocado > 0) alocado else if (planejado > 0) planejado else 0.0
     val progressFloat = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
-    val pctInt = if (baseVal > 0) ((gasto / baseVal) * 100).toInt() else 0
-    val progressColor = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF25834A)
+    val pctInt = if (alocado > 0) ((gasto / alocado) * 100).toInt() else 0
+    val progressColor = getPlanningProgressColor(planejado, alocado, gasto)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 36.dp)
             .combinedClickable(
                 onClick = onRowClick,
                 onLongClick = onRowLongClick
             )
             .padding(vertical = 1.dp)
     ) {
-        // Line 1: Icon Avatar + Category Name + Toggle Arrow + Status + Chevron
+        // Line 1: Icon + Name + Toggle Arrow + Warning + Status + Chevron
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(26.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
-                    .background(if (isOverLimit) Color(0xFFFFEBEE) else Color(0xFFE0F2F1)),
+                    .background(if (progressColor == Color(0xFFEF4444)) Color(0xFFFEE2E2) else Color(0xFFE6F4EA)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = getCategoryIcon(category.name),
                     contentDescription = null,
-                    tint = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF0F9488),
-                    modifier = Modifier.size(14.dp)
+                    tint = if (progressColor == Color(0xFFEF4444)) Color(0xFFEF4444) else Color(0xFF22A45D),
+                    modifier = Modifier.size(13.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -2002,24 +2183,29 @@ fun CategoryRowItem(
             ) {
                 Text(
                     text = category.name,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                     modifier = Modifier.weight(1f, fill = false)
                 )
 
                 if (showToggle) {
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                        contentDescription = "Expandir/Recolher",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Box(
                         modifier = Modifier
-                            .size(16.dp)
+                            .clip(CircleShape)
                             .clickable { onToggle() }
-                    )
+                            .padding(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Expandir/Recolher",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
 
                 if (planejado != alocado || (gasto > 0.0 && alocado == 0.0)) {
@@ -2027,8 +2213,8 @@ fun CategoryRowItem(
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = "Aviso",
-                        tint = Color(0xFFC93A35),
-                        modifier = Modifier.size(12.dp)
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(13.dp)
                     )
                 }
             }
@@ -2037,9 +2223,9 @@ fun CategoryRowItem(
 
             Text(
                 text = if (isMeta) "${formatPlanningMoney(alocado)} acumulados" else statusText,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = if (isMeta) Color(0xFF25834A) else statusColor,
+                color = if (isMeta) Color(0xFF22A45D) else statusColor,
                 textAlign = TextAlign.End
             )
 
@@ -2048,15 +2234,15 @@ fun CategoryRowItem(
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = Color(0xFF9E9E9E),
-                modifier = Modifier.size(15.dp)
+                tint = secondaryTextColor,
+                modifier = Modifier.size(14.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(3.dp))
 
-        // Line 2: Values Summary (Planejado, Alocado, Gasto in 3 clean columns) - aligned with Subcategory (20.dp start padding)
-        Box(modifier = Modifier.padding(start = 20.dp)) {
+        // Line 2: Values Summary
+        Box(modifier = Modifier.padding(start = 30.dp)) {
             BudgetValuesGrid(
                 planejado = planejado,
                 alocado = alocado,
@@ -2065,85 +2251,15 @@ fun CategoryRowItem(
             )
         }
 
-        // Line 3: Progress Bar & Percentage - aligned with Subcategory (20.dp start padding)
+        // Line 3: Progress Bar & Percentage
         if (!isMeta) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Box(modifier = Modifier.padding(start = 20.dp)) {
+            Spacer(modifier = Modifier.height(3.dp))
+            Box(modifier = Modifier.padding(start = 30.dp)) {
                 BudgetProgressIndicator(
                     progressFloat = progressFloat,
                     pctInt = pctInt,
                     progressColor = progressColor
                 )
-            }
-        }
-
-        // Action Panel if expanded
-        AnimatedVisibility(
-            visible = isActionPanelExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    .padding(vertical = 4.dp, horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = onEditPlanned,
-                    modifier = Modifier.testTag("action_planejar_${category.id}"),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("Planejar", fontSize = 10.sp)
-                }
-
-                TextButton(
-                    onClick = onEditAllocated,
-                    modifier = Modifier.testTag("action_alocar_${category.id}"),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("Alocar", fontSize = 10.sp)
-                }
-
-                TextButton(
-                    onClick = onMoveMoney,
-                    modifier = Modifier.testTag("action_mover_${category.id}"),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("Mover", fontSize = 10.sp)
-                }
-
-                TextButton(
-                    onClick = onNewTransaction,
-                    modifier = Modifier.testTag("action_nova_transacao_${category.id}"),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("Nova Transação", fontSize = 10.sp)
-                }
-
-                TextButton(
-                    onClick = onQuickAlign,
-                    modifier = Modifier.testTag("action_ajuste_${category.id}"),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("Ajuste", fontSize = 10.sp)
-                }
             }
         }
     }
@@ -2168,41 +2284,43 @@ fun SubcategoryRowItem(
     onNewTransaction: () -> Unit,
     onQuickAlign: () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
+    val primaryTextColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
+    val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
+
     val isMeta = category.id == -999
     val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto)
-    val isOverLimit = !isMeta && (gasto > alocado && alocado > 0.0 || (alocado == 0.0 && gasto > 0.0))
 
-    val baseVal = if (alocado > 0) alocado else if (planejado > 0) planejado else 0.0
     val progressFloat = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
-    val pctInt = if (baseVal > 0) ((gasto / baseVal) * 100).toInt() else 0
-    val progressColor = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF25834A)
+    val pctInt = if (alocado > 0) ((gasto / alocado) * 100).toInt() else 0
+    val progressColor = getPlanningProgressColor(planejado, alocado, gasto)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 32.dp)
             .height(IntrinsicSize.Min)
             .combinedClickable(
                 onClick = onRowClick,
                 onLongClick = onRowLongClick
             )
-            .padding(vertical = 2.dp),
+            .padding(vertical = 1.dp),
         verticalAlignment = Alignment.Top
     ) {
         // Connector line: continuous dashed vertical line from Category down to Subcategories
         Box(
             modifier = Modifier
-                .width(20.dp)
+                .width(16.dp)
                 .fillMaxHeight()
         ) {
             Canvas(modifier = Modifier.matchParentSize()) {
                 val strokeWidth = 1.5.dp.toPx()
-                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-                val connectorColor = Color(0xFF80CBC4)
+                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f)
+                val connectorColor = if (isDark) Color(0xFF38474A) else Color(0xFFC0C7CE)
 
-                val lineX = 13.dp.toPx() // Aligned under category icon center (13.dp)
-                val iconCenterY = 11.dp.toPx() // Center Y of the 22.dp subcategory icon
+                val lineX = 8.dp.toPx()
+                val iconCenterY = 10.dp.toPx()
 
-                // If last subcategory, stop line at the icon center
                 val lineBottom = if (isLast) iconCenterY else size.height
 
                 drawLine(
@@ -2222,7 +2340,7 @@ fun SubcategoryRowItem(
             }
         }
 
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(3.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             // Line 1: Subcategory Icon + Name + Status + Chevron
@@ -2232,26 +2350,26 @@ fun SubcategoryRowItem(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
+                        .size(20.dp)
                         .clip(CircleShape)
-                        .background(if (isOverLimit) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)),
+                        .background(if (progressColor == Color(0xFFEF4444)) Color(0xFFFEE2E2) else Color(0xFFE6F4EA)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = getCategoryIcon(subcategory.name),
                         contentDescription = null,
-                        tint = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF0F9488),
-                        modifier = Modifier.size(12.dp)
+                        tint = if (progressColor == Color(0xFFEF4444)) Color(0xFFEF4444) else Color(0xFF22A45D),
+                        modifier = Modifier.size(11.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(5.dp))
 
                 Text(
                     text = subcategory.name,
-                    fontSize = 12.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = primaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                     modifier = Modifier.weight(1f)
@@ -2261,9 +2379,9 @@ fun SubcategoryRowItem(
 
                 Text(
                     text = if (isMeta) "${formatPlanningMoney(alocado)} acumulados" else statusText,
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isMeta) Color(0xFF25834A) else statusColor,
+                    color = if (isMeta) Color(0xFF22A45D) else statusColor,
                     textAlign = TextAlign.End
                 )
 
@@ -2272,8 +2390,8 @@ fun SubcategoryRowItem(
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = Color(0xFF9E9E9E),
-                    modifier = Modifier.size(14.dp)
+                    tint = secondaryTextColor,
+                    modifier = Modifier.size(13.dp)
                 )
             }
 
@@ -2297,7 +2415,7 @@ fun SubcategoryRowItem(
                 )
             }
 
-            // Action Panel if expanded
+            // Action Panel ONLY for Subcategory if expanded
             AnimatedVisibility(
                 visible = isActionPanelExpanded,
                 enter = expandVertically() + fadeIn(),
@@ -2306,12 +2424,12 @@ fun SubcategoryRowItem(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 6.dp)
+                        .padding(top = 4.dp)
                         .background(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             shape = RoundedCornerShape(8.dp)
                         )
-                        .padding(vertical = 2.dp, horizontal = 2.dp),
+                        .padding(vertical = 1.dp, horizontal = 1.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -2322,7 +2440,7 @@ fun SubcategoryRowItem(
                     ) {
                         Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(11.dp))
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text("Planejar", fontSize = 9.sp)
+                        Text("Planejar", fontSize = 10.sp)
                     }
 
                     TextButton(
@@ -2332,7 +2450,7 @@ fun SubcategoryRowItem(
                     ) {
                         Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(11.dp))
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text("Alocar", fontSize = 9.sp)
+                        Text("Alocar", fontSize = 10.sp)
                     }
 
                     TextButton(
@@ -2342,7 +2460,7 @@ fun SubcategoryRowItem(
                     ) {
                         Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(11.dp))
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text("Mover", fontSize = 9.sp)
+                        Text("Mover", fontSize = 10.sp)
                     }
 
                     if (!isMeta) {
@@ -2353,7 +2471,7 @@ fun SubcategoryRowItem(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(11.dp))
                             Spacer(modifier = Modifier.width(2.dp))
-                            Text("Nova Transação", fontSize = 9.sp)
+                            Text("Nova Transação", fontSize = 10.sp)
                         }
                     }
 
@@ -2364,7 +2482,7 @@ fun SubcategoryRowItem(
                     ) {
                         Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(11.dp))
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text("Ajuste", fontSize = 9.sp)
+                        Text("Ajuste", fontSize = 10.sp)
                     }
                 }
             }

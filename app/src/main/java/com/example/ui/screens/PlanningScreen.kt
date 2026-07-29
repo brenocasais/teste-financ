@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -534,7 +534,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
             }
         )
     } else {
-        val isDark = isSystemInDarkTheme()
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
         val bgColor = if (isDark) Color(0xFF0D1315) else Color(0xFFFAFAFB)
         val cardBgColor = if (isDark) Color(0xFF172022) else Color(0xFFFFFFFF)
         val cardBorderColor = if (isDark) Color(0xFF283438) else Color(0xFFE6E9EC)
@@ -2006,7 +2006,7 @@ fun BudgetValuesGrid(
     pctInt: Int? = null,
     progressColor: Color = Color.Unspecified
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
     val labelColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
 
@@ -2091,7 +2091,7 @@ fun BudgetProgressIndicator(
     progressFloat: Float,
     progressColor: Color
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val trackColor = if (isDark) Color(0xFF202B2E) else Color(0xFFEAEAEA)
 
     LinearProgressIndicator(
@@ -2123,7 +2123,7 @@ fun CategoryRowItem(
     onRowClick: () -> Unit,
     onRowLongClick: (() -> Unit)? = null
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val primaryTextColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
     val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
 
@@ -2279,7 +2279,7 @@ fun SubcategoryRowItem(
     onNewTransaction: () -> Unit,
     onQuickAlign: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val primaryTextColor = if (isDark) Color(0xFFF5F7F8) else Color(0xFF111827)
     val secondaryTextColor = if (isDark) Color(0xFF9FA9AB) else Color(0xFF6B7280)
 

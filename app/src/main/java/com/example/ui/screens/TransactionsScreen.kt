@@ -4,7 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -240,7 +240,7 @@ fun TransactionsScreen(
             .groupBy { getDateGroupLabel(it.date) }
     }
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val bgColor = if (isDark) Color(0xFF13191B) else Color(0xFFFAFAFB)
     val cardBgColor = if (isDark) Color(0xFF1C2427) else Color(0xFFFFFFFF)
     val cardBorderColor = if (isDark) Color(0xFF283438) else Color(0xFFE5E7EC)

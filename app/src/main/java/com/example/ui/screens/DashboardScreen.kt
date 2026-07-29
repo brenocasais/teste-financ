@@ -310,22 +310,6 @@ fun DashboardScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // Sync status small dot indicator
-                            val syncColor = when {
-                                userId == "GUEST" -> Color.Gray
-                                syncState is MainViewModel.SyncState.Syncing -> financeColors.warning
-                                syncState is MainViewModel.SyncState.Error -> financeColors.danger
-                                else -> financeColors.success
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(syncColor)
-                                    .clickable { viewModel.triggerPush() }
-                            )
                         }
                     }
 

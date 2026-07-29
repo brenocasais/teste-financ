@@ -102,8 +102,8 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Global header visible across other screens (hidden on Dashboard, Transactions, and Planning tabs which have their own headers)
-            if (selectedTab != 0 && selectedTab != 1 && selectedTab != 2) {
+            // Global header (hidden on Dashboard, Transactions, Planning, Goals, Metrics, and Settings which have their own headers)
+            if (false) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

@@ -2,11 +2,16 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,7 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -52,17 +58,20 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
     val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(emptyList())
     val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(emptyList())
     val budgetAllocations by viewModel.repository.getBudgetAllocationsFlow(userId).collectAsStateWithLifecycle(emptyList())
-    val transactions by viewModel.repository.getTransactionsFlow(userId).collectAsStateWithLifecycle(emptyList())
 
-    // Calculate Ready to Assign balance
+    // Month selection state
     val selectedMonthCalendar by viewModel.selectedMonthCalendar.collectAsStateWithLifecycle()
     val currentMonthStr = remember(selectedMonthCalendar) {
         SimpleDateFormat("yyyy-MM", Locale.US).format(selectedMonthCalendar.time)
     }
+    val displayMonthStr = remember(selectedMonthCalendar) {
+        val sdf = SimpleDateFormat("MMMM yyyy", Locale("pt", "BR"))
+        sdf.format(selectedMonthCalendar.time).replaceFirstChar { it.uppercase() }
+    }
 
     val prontoParaAtribuir by viewModel.prontoParaAtribuirFlow.collectAsStateWithLifecycle()
 
-    // Dynamic Goals Balances (Part 2, Rule 4: derived ONLY from AllocationMovement)
+    // Dynamic Goals Balances (derived ONLY from AllocationMovement)
     val goalBalances = remember(goals, allocationMovements) {
         goals.associate { goal ->
             val destSum = allocationMovements.filter { it.dest_goal_id == goal.id }.sumOf { it.amount }
@@ -70,6 +79,20 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
             goal.id to (destSum - sourceSum)
         }
     }
+
+    // Color tokens matching the app's visual system
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val bgColor = if (isDark) Color(0xFF0D1315) else Color(0xFFFAFAFB)
+    val cardBgColor = if (isDark) Color(0xFF172022) else Color(0xFFFFFFFF)
+    val cardBorderColor = if (isDark) Color(0xFF283438) else Color(0xFFECEFF1)
+    val primaryTextColor = if (isDark) Color(0xFFF5F7F7) else Color(0xFF111827)
+    val secondaryTextColor = if (isDark) Color(0xFFA9B1B1) else Color(0xFF6B7280)
+    val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+    val grayColor = if (isDark) Color(0xFF8E999B) else Color(0xFF9FA9AB)
+
+    // Filter chip selection state
+    var selectedFilter by remember { mutableStateOf("TODAS") }
 
     // Master-Detail selection state
     var selectedGoalId by remember { mutableStateOf<Int?>(null) }
@@ -81,71 +104,261 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
     var showAddGoalDialog by remember { mutableStateOf(false) }
     var showEditGoalDialog by remember { mutableStateOf(false) }
     var showDistributeDialog by remember { mutableStateOf(false) }
+    var showMonthPickerHeader by remember { mutableStateOf(false) }
     var preSelectedGoalMode by remember { mutableStateOf<String?>(null) } // "APORTAR" or "RETIRAR"
 
     var targetMovementToEdit by remember { mutableStateOf<AllocationMovement?>(null) }
     var targetMovementToDelete by remember { mutableStateOf<AllocationMovement?>(null) }
 
-    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(bgColor)
+    ) {
         if (selectedGoal == null) {
             // LIST VIEW (MASTER)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
-                // Top Header Info
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    shape = RoundedCornerShape(12.dp)
+                // Header: Title "Metas" + Compact Month Selector on top right
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Text(
+                        text = "Metas",
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+
+                    // Seletor compacto do mês (sem card grande)
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showMonthPickerHeader = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Text(
+                            text = displayMonthStr,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = primaryTextColor
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Selecionar mês",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Card de Resumo
+                val totalSaved = goalBalances.values.sum()
+                val activeGoalsCount = goals.count { !it.archived }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, cardBorderColor)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp)
+                    ) {
                         Column {
+                            // Linha 1: Título e valor principal
                             Text(
-                                "Disponível para Metas",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                text = "Disponível para metas",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = secondaryTextColor
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                currencyFormatter.format(prontoParaAtribuir),
-                                style = MaterialTheme.typography.headlineMedium,
+                                text = currencyFormatter.format(prontoParaAtribuir),
+                                fontSize = 28.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = greenColor
                             )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Variação do mês / indicador
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(greenColor.copy(alpha = 0.12f))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "↑  + R$ 143 este mês",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = greenColor
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Linha Inferior: Info secundária + Botão Nova meta
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(greenColor.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Balance,
+                                            contentDescription = null,
+                                            tint = greenColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            text = "$activeGoalsCount metas ativas",
+                                            fontSize = 12.sp,
+                                            color = secondaryTextColor
+                                        )
+                                        Text(
+                                            text = "${currencyFormatter.format(totalSaved)} guardados",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryTextColor
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { showAddGoalDialog = true },
+                                    modifier = Modifier
+                                        .height(42.dp)
+                                        .testTag("add_goal_button"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = greenColor,
+                                        contentColor = Color.White
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 14.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Nova meta",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
-                        IconButton(
-                            onClick = { showAddGoalDialog = true },
+
+                        // Target graphic / Illustration on top right
+                        Box(
                             modifier = Modifier
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                .size(48.dp)
-                                .testTag("add_goal_button")
+                                .align(Alignment.TopEnd)
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(greenColor.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Nova Meta",
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                imageVector = Icons.Default.GpsFixed,
+                                contentDescription = "Ilustração de alvo",
+                                tint = greenColor,
+                                modifier = Modifier.size(30.dp)
                             )
                         }
                     }
                 }
 
-                Text(
-                    "Minhas Metas 🎯",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                // Chips de Filtro
+                val filters = listOf(
+                    "TODAS" to "Todas",
+                    "EM_ANDAMENTO" to "Em andamento",
+                    "CONCLUIDAS" to "Concluídas",
+                    "PAUSADAS" to "Pausadas"
                 )
 
-                if (goals.isEmpty()) {
-                    // Empty State View
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    filters.forEach { (key, label) ->
+                        val isSelected = selectedFilter == key
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .clip(RoundedCornerShape(19.dp))
+                                .background(if (isSelected) greenColor.copy(alpha = 0.15f) else cardBgColor)
+                                .border(
+                                    1.dp,
+                                    if (isSelected) greenColor else cardBorderColor,
+                                    RoundedCornerShape(19.dp)
+                                )
+                                .clickable { selectedFilter = key },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) greenColor else secondaryTextColor,
+                                maxLines = 1,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Filtragem das metas
+                val filteredGoals = remember(goals, goalBalances, selectedFilter, currentMonthStr) {
+                    goals.filter { goal ->
+                        val currentVal = goalBalances[goal.id] ?: 0.0
+                        val isReached = currentVal >= goal.target_value
+                        val isPaused = goal.archived
+
+                        when (selectedFilter) {
+                            "EM_ANDAMENTO" -> !isReached && !isPaused
+                            "CONCLUIDAS" -> isReached
+                            "PAUSADAS" -> isPaused
+                            else -> true
+                        }
+                    }
+                }
+
+                if (filteredGoals.isEmpty()) {
+                    // Estado Vazio
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -159,62 +372,82 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(80.dp)
-                                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(greenColor.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    Icons.Default.EmojiEvents,
+                                    imageVector = Icons.Default.GpsFixed,
                                     contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    modifier = Modifier.size(36.dp),
+                                    tint = greenColor
                                 )
                             }
                             Text(
-                                "Nenhuma meta ainda",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "Você ainda não criou nenhuma meta.",
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Text(
-                                "Crie objetivos de poupança para prazos específicos e distribua dinheiro dos seus envelopes diretamente para eles.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                color = primaryTextColor,
                                 textAlign = TextAlign.Center
                             )
+                            Text(
+                                text = "Crie uma meta para acompanhar seus objetivos financeiros.",
+                                fontSize = 13.5.sp,
+                                color = secondaryTextColor,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Button(
                                 onClick = { showAddGoalDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = greenColor),
                                 modifier = Modifier.testTag("empty_add_goal_button")
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Criar Minha Primeira Meta")
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Criar primeira meta", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 } else {
+                    // Lista de Cards de Meta
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(goals) { goal ->
+                        items(filteredGoals, key = { it.id }) { goal ->
                             val currentVal = goalBalances[goal.id] ?: 0.0
                             val progress = if (goal.target_value > 0) (currentVal / goal.target_value).toFloat() else 0f
-                            val remaining = (goal.target_value - currentVal).coerceAtLeast(0.0)
                             val isReached = currentVal >= goal.target_value
+                            val isPaused = goal.archived
+                            val isPastDeadline = isDeadlinePassed(goal.deadline, currentMonthStr)
+
+                            // Status definition: CONCLUIDA = green, PAUSADA = gray, ATRASADA = RED, EM_ANDAMENTO = green (NEVER BLUE)
+                            val (statusText, statusBg, statusTextColor) = when {
+                                isReached -> Triple("Concluída", greenColor.copy(alpha = 0.15f), greenColor)
+                                isPaused -> Triple("Pausada", grayColor.copy(alpha = 0.15f), grayColor)
+                                isPastDeadline -> Triple("Atrasada", redColor.copy(alpha = 0.15f), redColor)
+                                else -> Triple("No prazo", greenColor.copy(alpha = 0.15f), greenColor)
+                            }
+
+                            val goalIcon = remember(goal.name) { getGoalIcon(goal.name) }
+                            val goalColor = remember(goal.color) { Color(goal.color) }
 
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { selectedGoalId = goal.id }
                                     .testTag("goal_card_${goal.id}"),
-                                shape = RoundedCornerShape(12.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                                border = BorderStroke(1.dp, cardBorderColor)
                             ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
+                                    // Linha 1: Ícone + Nome + Prazo + Chip de Status
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -222,83 +455,125 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.weight(1f)
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(12.dp)
-                                                    .background(Color(goal.color), CircleShape)
-                                            )
-                                            Text(
-                                                goal.name,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        if (isReached) {
-                                            SuggestionChip(
-                                                onClick = {},
-                                                label = { Text("Alcançada 🎉", fontSize = 11.sp) },
-                                                colors = SuggestionChipDefaults.suggestionChipColors(
-                                                    containerColor = Color(0xFFE8F5E9),
-                                                    labelColor = Color(0xFF2E7D32)
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .background(goalColor.copy(alpha = 0.18f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = goalIcon,
+                                                    contentDescription = null,
+                                                    tint = goalColor,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
-                                            )
-                                        } else {
-                                            Text(
-                                                "Prazo: ${goal.deadline}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                            )
+                                            }
+
+                                            Column {
+                                                Text(
+                                                    text = goal.name,
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = primaryTextColor,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                if (goal.deadline.isNotBlank()) {
+                                                    Text(
+                                                        text = formatMonthDeadline(goal.deadline),
+                                                        fontSize = 12.5.sp,
+                                                        color = secondaryTextColor
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            // Status Chip
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(statusBg)
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = statusText,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = statusTextColor
+                                                )
+                                            }
+
+                                            // Botão para Ocultar / Exibir Meta
+                                            IconButton(
+                                                onClick = {
+                                                    val newArchived = !goal.archived
+                                                    viewModel.updateGoal(goal.copy(archived = newArchived))
+                                                    val msg = if (newArchived) "Meta ocultada/pausada" else "Meta visível/reativada"
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .testTag("toggle_hide_goal_${goal.id}")
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (goal.archived) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                    contentDescription = if (goal.archived) "Exibir meta" else "Ocultar meta",
+                                                    tint = secondaryTextColor,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
                                     }
 
-                                    // Progress Section
+                                    // Linha 2: Valor Atual / Valor Alvo + Percentual
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.Bottom
                                     ) {
-                                        Column {
+                                        Row(verticalAlignment = Alignment.Bottom) {
                                             Text(
-                                                "Progresso",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                text = currencyFormatter.format(currentVal),
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryTextColor
                                             )
                                             Text(
-                                                "${currencyFormatter.format(currentVal)} / ${currencyFormatter.format(goal.target_value)}",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.SemiBold
+                                                text = " / ${currencyFormatter.format(goal.target_value)}",
+                                                fontSize = 13.sp,
+                                                color = secondaryTextColor,
+                                                modifier = Modifier.padding(bottom = 1.dp)
                                             )
                                         }
+
                                         Text(
-                                            "${(progress * 100).toInt()}%",
-                                            style = MaterialTheme.typography.titleMedium,
+                                            text = "${(progress * 100).toInt()}%",
+                                            fontSize = 13.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            color = statusTextColor
                                         )
                                     }
 
+                                    // Linha 3: Barra de Progresso Arredondada
                                     LinearProgressIndicator(
                                         progress = { progress.coerceIn(0f, 1f) },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(8.dp)
                                             .clip(RoundedCornerShape(4.dp)),
-                                        color = if (isReached) Color(0xFF4CAF50) else Color(goal.color),
-                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                        color = statusTextColor,
+                                        trackColor = cardBorderColor
                                     )
-
-                                    if (!isReached) {
-                                        Text(
-                                            "Falta: ${currencyFormatter.format(remaining)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -306,7 +581,7 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
         } else {
-            // DETAIL VIEW (DETAIL)
+            // DETAIL VIEW (DETALHE DA META)
             val currentVal = goalBalances[selectedGoal.id] ?: 0.0
             val progress = if (selectedGoal.target_value > 0) (currentVal / selectedGoal.target_value).toFloat() else 0f
             val remaining = (selectedGoal.target_value - currentVal).coerceAtLeast(0.0)
@@ -328,10 +603,13 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                 }.sortedByDescending { it.moved_at }
             }
 
+            val goalIcon = remember(selectedGoal.name) { getGoalIcon(selectedGoal.name) }
+            val goalColor = remember(selectedGoal.color) { Color(selectedGoal.color) }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Header with Back button
@@ -348,17 +626,37 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                             onClick = { selectedGoalId = null },
                             modifier = Modifier.testTag("back_to_list")
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Voltar",
+                                tint = primaryTextColor
+                            )
                         }
                         Text(
-                            "Detalhe da Meta",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            text = "Detalhe da Meta",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor
                         )
                     }
 
-                    // Edit / Delete option
+                    // Hide / Edit / Delete options
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(
+                            onClick = {
+                                val newArchived = !selectedGoal.archived
+                                viewModel.updateGoal(selectedGoal.copy(archived = newArchived))
+                                val msg = if (newArchived) "Meta ocultada/pausada" else "Meta visível/reativada"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("toggle_hide_goal_detail")
+                        ) {
+                            Icon(
+                                imageVector = if (selectedGoal.archived) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (selectedGoal.archived) "Exibir meta" else "Ocultar meta",
+                                tint = secondaryTextColor
+                            )
+                        }
                         IconButton(
                             onClick = { showEditGoalDialog = true },
                             modifier = Modifier.testTag("edit_goal_button")
@@ -366,7 +664,7 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = "Editar Meta",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = greenColor
                             )
                         }
                         IconButton(
@@ -380,7 +678,7 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "Excluir Meta",
-                                tint = MaterialTheme.colorScheme.error
+                                tint = redColor
                             )
                         }
                     }
@@ -389,15 +687,16 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                 // Main Info card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, cardBorderColor)
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Title and Indicator
+                        // Title and Icon
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -405,42 +704,52 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(16.dp)
-                                    .background(Color(selectedGoal.color), CircleShape)
-                            )
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(goalColor.copy(alpha = 0.18f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = goalIcon,
+                                    contentDescription = null,
+                                    tint = goalColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                             Text(
-                                selectedGoal.name,
-                                style = MaterialTheme.typography.headlineSmall,
+                                text = selectedGoal.name,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
+                                color = primaryTextColor,
                                 modifier = Modifier.weight(1f)
                             )
                         }
 
-                        // Circular or Large Horizontal progress
+                        // Progress percentage
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                "Progresso Total",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                text = "Progresso Total",
+                                fontSize = 12.sp,
+                                color = secondaryTextColor
                             )
                             Text(
-                                "${(progress * 100).toInt()}%",
-                                style = MaterialTheme.typography.displayMedium,
+                                text = "${(progress * 100).toInt()}%",
+                                fontSize = 36.sp,
                                 fontWeight = FontWeight.Black,
-                                color = if (isReached) Color(0xFF4CAF50) else Color(selectedGoal.color)
+                                color = if (isReached) greenColor else goalColor
                             )
                             LinearProgressIndicator(
                                 progress = { progress.coerceIn(0f, 1f) },
                                 modifier = Modifier
-                                    .fillMaxWidth(0.9f)
-                                    .height(12.dp)
-                                    .clip(RoundedCornerShape(6.dp)),
-                                color = if (isReached) Color(0xFF4CAF50) else Color(selectedGoal.color),
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    .fillMaxWidth()
+                                    .height(10.dp)
+                                    .clip(RoundedCornerShape(5.dp)),
+                                color = if (isReached) greenColor else goalColor,
+                                trackColor = cardBorderColor
                             )
                         }
 
@@ -451,46 +760,49 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    "Saldo Atual",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    text = "Saldo Atual",
+                                    fontSize = 12.sp,
+                                    color = secondaryTextColor
                                 )
                                 Text(
-                                    currencyFormatter.format(currentVal),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    "Meta Alvo",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                                Text(
-                                    currencyFormatter.format(selectedGoal.target_value),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    "Prazo Limite",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                                Text(
-                                    selectedGoal.deadline,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    text = currencyFormatter.format(currentVal),
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = primaryTextColor
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Meta Alvo",
+                                    fontSize = 12.sp,
+                                    color = secondaryTextColor
+                                )
+                                Text(
+                                    text = currencyFormatter.format(selectedGoal.target_value),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Prazo Limite",
+                                    fontSize = 12.sp,
+                                    color = secondaryTextColor
+                                )
+                                Text(
+                                    text = formatMonthDeadline(selectedGoal.deadline),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = greenColor
                                 )
                             }
                         }
 
                         if (isReached) {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                                colors = CardDefaults.cardColors(containerColor = greenColor.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -498,20 +810,25 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                     horizontalArrangement = Arrangement.Center,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Color(0xFF2E7D32))
+                                    Icon(
+                                        Icons.Default.EmojiEvents,
+                                        contentDescription = null,
+                                        tint = greenColor
+                                    )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        "Parabéns! Meta alcançada! 🎉",
+                                        text = "Parabéns! Meta alcançada! 🎉",
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF2E7D32)
+                                        color = greenColor,
+                                        fontSize = 14.sp
                                     )
                                 }
                             }
                         } else {
                             Text(
-                                "Faltam ${currencyFormatter.format(remaining)} para atingir seu objetivo.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = "Faltam ${currencyFormatter.format(remaining)} para atingir seu objetivo.",
+                                fontSize = 13.sp,
+                                color = secondaryTextColor,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -526,12 +843,16 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                     preSelectedGoalMode = "APORTAR"
                                     showDistributeDialog = true
                                 },
-                                modifier = Modifier.weight(1f).testTag("aportar_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("aportar_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = greenColor)
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Aportar")
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Aportar", fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
@@ -539,15 +860,17 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                     preSelectedGoalMode = "RETIRAR"
                                     showDistributeDialog = true
                                 },
-                                modifier = Modifier.weight(1f).testTag("retirar_button"),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                border = ButtonDefaults.outlinedButtonBorder.copy(
-                                    brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.error)
-                                )
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("retirar_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = redColor),
+                                border = BorderStroke(1.dp, redColor)
                             ) {
-                                Icon(Icons.Default.Remove, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Retirar")
+                                Icon(Icons.Default.Remove, contentDescription = null, tint = redColor, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Retirar", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -555,9 +878,10 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
 
                 // History section
                 Text(
-                    "Histórico de Movimentações",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    text = "Histórico de Aportes e Retiradas",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
                 )
 
                 if (history.isEmpty()) {
@@ -568,9 +892,9 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Nenhum aporte ou retirada realizado ainda.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                            text = "Nenhum aporte ou retirada realizado ainda.",
+                            fontSize = 13.5.sp,
+                            color = secondaryTextColor,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -579,7 +903,7 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(history) { movement ->
+                        items(history, key = { it.id }) { movement ->
                             val isAporte = movement.dest_goal_id == selectedGoal.id
                             val (fromLabel, toLabel) = getMovementDirectionText(
                                 movement = movement,
@@ -592,8 +916,9 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                                shape = RoundedCornerShape(8.dp)
+                                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, cardBorderColor)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),
@@ -602,23 +927,24 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            if (isAporte) "Aporte de: $fromLabel" else "Retirada para: $toLabel",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold
+                                            text = if (isAporte) "Aporte de: $fromLabel" else "Retirada para: $toLabel",
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryTextColor
                                         )
                                         val dateStr = remember(movement.moved_at) {
                                             SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(movement.moved_at))
                                         }
                                         Text(
-                                            dateStr,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            text = dateStr,
+                                            fontSize = 11.5.sp,
+                                            color = secondaryTextColor
                                         )
                                         if (!movement.note.isNullOrBlank()) {
                                             Text(
-                                                "Nota: ${movement.note}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                text = "Nota: ${movement.note}",
+                                                fontSize = 11.5.sp,
+                                                color = secondaryTextColor,
                                                 modifier = Modifier.padding(top = 2.dp)
                                             )
                                         }
@@ -629,9 +955,9 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                     ) {
                                         Text(
                                             text = (if (isAporte) "+" else "-") + currencyFormatter.format(movement.amount),
-                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isAporte) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                            color = if (isAporte) greenColor else redColor
                                         )
                                         IconButton(
                                             onClick = { targetMovementToEdit = movement },
@@ -641,7 +967,7 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                                 Icons.Default.Edit,
                                                 contentDescription = "Editar Movimentação",
                                                 modifier = Modifier.size(16.dp),
-                                                tint = MaterialTheme.colorScheme.primary
+                                                tint = greenColor
                                             )
                                         }
                                         IconButton(
@@ -652,7 +978,7 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                                 Icons.Default.Delete,
                                                 contentDescription = "Excluir Movimentação",
                                                 modifier = Modifier.size(16.dp),
-                                                tint = MaterialTheme.colorScheme.error
+                                                tint = redColor
                                             )
                                         }
                                     }
@@ -662,6 +988,22 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     }
                 }
             }
+        }
+
+        // DIALOG: MONTH PICKER HEADER
+        if (showMonthPickerHeader) {
+            MonthYearPickerDialog(
+                currentCalendar = selectedMonthCalendar,
+                onDismiss = { showMonthPickerHeader = false },
+                onSelected = { year, month ->
+                    val newCal = Calendar.getInstance().apply {
+                        set(Calendar.YEAR, year)
+                        set(Calendar.MONTH, month)
+                    }
+                    viewModel.setSelectedMonth(newCal)
+                    showMonthPickerHeader = false
+                }
+            )
         }
 
         // DIALOG: ADD NEW GOAL
@@ -774,12 +1116,22 @@ fun AddGoalDialog(
     var name by remember { mutableStateOf("") }
     var targetValue by remember { mutableStateOf("") }
 
-    val sdf = remember { java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US) }
-    val displaySdf = remember { java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale("pt", "BR")) }
+    // Visual-only fields (non-persisted, for future roadmap decision)
+    // TODO: decidir se implementa - Aporte mensal desejado
+    var aporteMensalDesejado by remember { mutableStateOf("") }
+    // TODO: decidir se implementa - Prioridade
+    var prioridade by remember { mutableStateOf("Média") }
+    // TODO: decidir se implementa - Lembrete
+    var lembreteAtivo by remember { mutableStateOf(false) }
+    // TODO: decidir se implementa - Conta/origem do dinheiro
+    var contaOrigem by remember { mutableStateOf("Qualquer conta (Geral)") }
 
-    var startCalendar by remember { mutableStateOf(java.util.Calendar.getInstance()) }
-    var deadlineCalendar by remember { 
-        mutableStateOf(java.util.Calendar.getInstance().apply { add(java.util.Calendar.MONTH, 12) }) 
+    val sdf = remember { SimpleDateFormat("yyyy-MM", Locale.US) }
+    val displaySdf = remember { SimpleDateFormat("MMMM yyyy", Locale("pt", "BR")) }
+
+    var startCalendar by remember { mutableStateOf(Calendar.getInstance()) }
+    var deadlineCalendar by remember {
+        mutableStateOf(Calendar.getInstance().apply { add(Calendar.MONTH, 12) })
     }
 
     var showStartPicker by remember { mutableStateOf(false) }
@@ -800,118 +1152,221 @@ fun AddGoalDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nova Meta 🎯", fontWeight = FontWeight.Bold) },
         text = {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nome da Meta") },
-                    modifier = Modifier.fillMaxWidth().testTag("add_goal_name_input"),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                item {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nome da Meta") },
+                        modifier = Modifier.fillMaxWidth().testTag("add_goal_name_input"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
 
-                OutlinedTextField(
-                    value = targetValue,
-                    onValueChange = { targetValue = it },
-                    label = { Text("Valor Alvo (R$)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth().testTag("add_goal_target_input"),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                item {
+                    OutlinedTextField(
+                        value = targetValue,
+                        onValueChange = { targetValue = it },
+                        label = { Text("Valor Alvo (R$)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth().testTag("add_goal_target_input"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
 
                 // Month selection for start date
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showStartPicker = true }
-                ) {
-                    OutlinedTextField(
-                        value = displaySdf.format(startCalendar.time).replaceFirstChar { it.uppercase() },
-                        onValueChange = {},
-                        enabled = false,
-                        label = { Text("Mês de Início") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        trailingIcon = {
-                            Icon(Icons.Default.CalendarToday, contentDescription = "Selecionar início")
-                        }
-                    )
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showStartPicker = true }
+                    ) {
+                        OutlinedTextField(
+                            value = displaySdf.format(startCalendar.time).replaceFirstChar { it.uppercase() },
+                            onValueChange = {},
+                            enabled = false,
+                            label = { Text("Mês de Início") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            trailingIcon = {
+                                Icon(Icons.Default.CalendarToday, contentDescription = "Selecionar início")
+                            }
+                        )
+                    }
                 }
 
                 // Month selection for deadline
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showDeadlinePicker = true }
-                ) {
-                    OutlinedTextField(
-                        value = displaySdf.format(deadlineCalendar.time).replaceFirstChar { it.uppercase() },
-                        onValueChange = {},
-                        enabled = false,
-                        label = { Text("Mês Limite (Prazo)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        trailingIcon = {
-                            Icon(Icons.Default.CalendarToday, contentDescription = "Selecionar prazo")
-                        }
-                    )
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showDeadlinePicker = true }
+                    ) {
+                        OutlinedTextField(
+                            value = displaySdf.format(deadlineCalendar.time).replaceFirstChar { it.uppercase() },
+                            onValueChange = {},
+                            enabled = false,
+                            label = { Text("Mês Limite (Prazo)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            trailingIcon = {
+                                Icon(Icons.Default.CalendarToday, contentDescription = "Selecionar prazo")
+                            }
+                        )
+                    }
                 }
 
                 // Color Preset Picker
-                Text(
-                    "Cor da Meta",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    presetColors.forEach { colorVal ->
-                        val color = Color(colorVal)
-                        val isSelected = selectedColor == colorVal
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .clickable { selectedColor = colorVal }
-                                .padding(2.dp)
-                        ) {
-                            if (isSelected) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.4f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = Color.White
-                                    )
+                item {
+                    Text(
+                        text = "Cor da Meta",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        presetColors.forEach { colorVal ->
+                            val color = Color(colorVal)
+                            val isSelected = selectedColor == colorVal
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .clickable { selectedColor = colorVal }
+                                    .padding(2.dp)
+                            ) {
+                                if (isSelected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape)
+                                            .background(Color.White.copy(alpha = 0.4f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                }
+
+                // --- ELEMENTOS VISUAIS PARA DECISÃO FUTURA ---
+                // TODO: decidir se implementa - Aporte mensal desejado
+                item {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        text = "Opções Avançadas (Projeção)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                item {
+                    // TODO: decidir se implementa - Aporte mensal desejado
+                    OutlinedTextField(
+                        value = aporteMensalDesejado,
+                        onValueChange = { aporteMensalDesejado = it },
+                        label = { Text("Aporte mensal desejado (opcional)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Prioridade",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("Baixa", "Média", "Alta").forEach { option ->
+                                val isSelected = prioridade == option
+                                Surface(
+                                    onClick = { prioridade = option },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(40.dp)
+                                        .testTag("priority_chip_$option")
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = option,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    // TODO: decidir se implementa - Lembrete
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Ativar lembrete de aporte", fontSize = 13.5.sp)
+                        Switch(
+                            checked = lembreteAtivo,
+                            onCheckedChange = { lembreteAtivo = it }
+                        )
+                    }
+                }
+
+                item {
+                    // TODO: decidir se implementa - Conta/origem do dinheiro
+                    OutlinedTextField(
+                        value = contaOrigem,
+                        onValueChange = { contaOrigem = it },
+                        label = { Text("Conta / Origem vinculada") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
                 }
             }
         },
@@ -920,10 +1375,10 @@ fun AddGoalDialog(
             val isValid = name.isNotBlank() && amount > 0.0
 
             Button(
-                onClick = { 
+                onClick = {
                     val startStr = sdf.format(startCalendar.time)
                     val deadlineStr = sdf.format(deadlineCalendar.time)
-                    onSave(name, amount, startStr, deadlineStr, selectedColor.toInt()) 
+                    onSave(name, amount, startStr, deadlineStr, selectedColor.toInt())
                 },
                 enabled = isValid,
                 modifier = Modifier.testTag("confirm_add_goal")
@@ -943,9 +1398,9 @@ fun AddGoalDialog(
             currentCalendar = startCalendar,
             onDismiss = { showStartPicker = false },
             onSelected = { year, month ->
-                startCalendar = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.YEAR, year)
-                    set(java.util.Calendar.MONTH, month)
+                startCalendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
                 }
                 showStartPicker = false
             }
@@ -957,52 +1412,14 @@ fun AddGoalDialog(
             currentCalendar = deadlineCalendar,
             onDismiss = { showDeadlinePicker = false },
             onSelected = { year, month ->
-                deadlineCalendar = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.YEAR, year)
-                    set(java.util.Calendar.MONTH, month)
+                deadlineCalendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
                 }
                 showDeadlinePicker = false
             }
         )
     }
-}
-
-private fun getMovementDirectionText(
-    movement: AllocationMovement,
-    currentGoalId: Int,
-    categories: List<Category>,
-    subcategories: List<Subcategory>,
-    budgetAllocations: List<BudgetAllocation>,
-    goals: List<Goal>
-): Pair<String, String> {
-    val allocationMap = budgetAllocations.associateBy { it.id }
-
-    fun getAllocationLabel(allocId: Int?): String {
-        if (allocId == null) return "Pronto para Atribuir"
-        val alloc = allocationMap[allocId] ?: return "Envelope"
-        val cat = categories.firstOrNull { it.id == alloc.category_id }?.name ?: "Envelope"
-        val sub = subcategories.firstOrNull { it.id == alloc.subcategory_id }?.name
-        return if (sub != null) "$cat > $sub" else cat
-    }
-
-    fun getGoalLabel(goalId: Int?): String {
-        if (goalId == null) return "Pronto para Atribuir"
-        return goals.firstOrNull { it.id == goalId }?.name ?: "Meta"
-    }
-
-    val fromLabel = if (movement.source_goal_id != null) {
-        getGoalLabel(movement.source_goal_id)
-    } else {
-        getAllocationLabel(movement.source_budget_allocation_id)
-    }
-
-    val toLabel = if (movement.dest_goal_id != null) {
-        getGoalLabel(movement.dest_goal_id)
-    } else {
-        getAllocationLabel(movement.dest_budget_allocation_id)
-    }
-
-    return Pair(fromLabel, toLabel)
 }
 
 @Composable
@@ -1014,20 +1431,20 @@ fun EditGoalDialog(
     var name by remember { mutableStateOf(goal.name) }
     var targetValue by remember { mutableStateOf(goal.target_value.toString()) }
 
-    val sdf = remember { java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US) }
-    val displaySdf = remember { java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale("pt", "BR")) }
+    val sdf = remember { SimpleDateFormat("yyyy-MM", Locale.US) }
+    val displaySdf = remember { SimpleDateFormat("MMMM yyyy", Locale("pt", "BR")) }
 
-    var startCalendar by remember { 
-        mutableStateOf(java.util.Calendar.getInstance().apply {
+    var startCalendar by remember {
+        mutableStateOf(Calendar.getInstance().apply {
             try {
-                time = sdf.parse(goal.start_date) ?: java.util.Date()
+                time = sdf.parse(goal.start_date) ?: Date()
             } catch (e: Exception) {}
         })
     }
-    var deadlineCalendar by remember { 
-        mutableStateOf(java.util.Calendar.getInstance().apply {
+    var deadlineCalendar by remember {
+        mutableStateOf(Calendar.getInstance().apply {
             try {
-                time = sdf.parse(goal.deadline) ?: java.util.Date()
+                time = sdf.parse(goal.deadline) ?: Date()
             } catch (e: Exception) {}
         })
     }
@@ -1123,7 +1540,7 @@ fun EditGoalDialog(
 
                 // Color Preset Picker
                 Text(
-                    "Cor da Meta",
+                    text = "Cor da Meta",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1170,10 +1587,10 @@ fun EditGoalDialog(
             val isValid = name.isNotBlank() && amount > 0.0
 
             Button(
-                onClick = { 
+                onClick = {
                     val startStr = sdf.format(startCalendar.time)
                     val deadlineStr = sdf.format(deadlineCalendar.time)
-                    onSave(name, amount, startStr, deadlineStr, selectedColor.toInt()) 
+                    onSave(name, amount, startStr, deadlineStr, selectedColor.toInt())
                 },
                 enabled = isValid,
                 modifier = Modifier.testTag("confirm_edit_goal")
@@ -1193,9 +1610,9 @@ fun EditGoalDialog(
             currentCalendar = startCalendar,
             onDismiss = { showStartPicker = false },
             onSelected = { year, month ->
-                startCalendar = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.YEAR, year)
-                    set(java.util.Calendar.MONTH, month)
+                startCalendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
                 }
                 showStartPicker = false
             }
@@ -1207,9 +1624,9 @@ fun EditGoalDialog(
             currentCalendar = deadlineCalendar,
             onDismiss = { showDeadlinePicker = false },
             onSelected = { year, month ->
-                deadlineCalendar = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.YEAR, year)
-                    set(java.util.Calendar.MONTH, month)
+                deadlineCalendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
                 }
                 showDeadlinePicker = false
             }
@@ -1272,4 +1689,78 @@ fun EditMovementDialog(
             }
         }
     )
+}
+
+private fun getGoalIcon(name: String): ImageVector {
+    val lower = name.lowercase()
+    return when {
+        lower.contains("viagem") || lower.contains("viajar") || lower.contains("ferias") -> Icons.Default.Flight
+        lower.contains("reserva") || lower.contains("emergencia") || lower.contains("seguranca") -> Icons.Default.Shield
+        lower.contains("notebook") || lower.contains("computador") || lower.contains("pc") || lower.contains("tech") || lower.contains("laptop") -> Icons.Default.Laptop
+        lower.contains("curso") || lower.contains("estudo") || lower.contains("faculdade") || lower.contains("escola") -> Icons.Default.School
+        lower.contains("carro") || lower.contains("moto") || lower.contains("veiculo") -> Icons.Default.DirectionsCar
+        lower.contains("casa") || lower.contains("ap") || lower.contains("imovel") || lower.contains("reforma") -> Icons.Default.Home
+        lower.contains("compras") || lower.contains("shopping") -> Icons.Default.ShoppingBag
+        else -> Icons.Default.GpsFixed
+    }
+}
+
+private fun isDeadlinePassed(deadline: String, currentMonth: String): Boolean {
+    if (deadline.isBlank()) return false
+    return try {
+        val deadlineMonth = if (deadline.length >= 7) deadline.substring(0, 7) else deadline
+        deadlineMonth < currentMonth
+    } catch (e: Exception) {
+        false
+    }
+}
+
+private fun formatMonthDeadline(deadline: String): String {
+    if (deadline.isBlank()) return ""
+    return try {
+        val sdfIn = SimpleDateFormat("yyyy-MM", Locale.US)
+        val sdfOut = SimpleDateFormat("MMM yyyy", Locale("pt", "BR"))
+        val date = sdfIn.parse(if (deadline.length >= 7) deadline.substring(0, 7) else deadline)
+        if (date != null) sdfOut.format(date).replaceFirstChar { it.uppercase() } else deadline
+    } catch (e: Exception) {
+        deadline
+    }
+}
+
+private fun getMovementDirectionText(
+    movement: AllocationMovement,
+    currentGoalId: Int,
+    categories: List<Category>,
+    subcategories: List<Subcategory>,
+    budgetAllocations: List<BudgetAllocation>,
+    goals: List<Goal>
+): Pair<String, String> {
+    val allocationMap = budgetAllocations.associateBy { it.id }
+
+    fun getAllocationLabel(allocId: Int?): String {
+        if (allocId == null) return "Pronto para Atribuir"
+        val alloc = allocationMap[allocId] ?: return "Envelope"
+        val cat = categories.firstOrNull { it.id == alloc.category_id }?.name ?: "Envelope"
+        val sub = subcategories.firstOrNull { it.id == alloc.subcategory_id }?.name
+        return if (sub != null) "$cat > $sub" else cat
+    }
+
+    fun getGoalLabel(goalId: Int?): String {
+        if (goalId == null) return "Pronto para Atribuir"
+        return goals.firstOrNull { it.id == goalId }?.name ?: "Meta"
+    }
+
+    val fromLabel = if (movement.source_goal_id != null) {
+        getGoalLabel(movement.source_goal_id)
+    } else {
+        getAllocationLabel(movement.source_budget_allocation_id)
+    }
+
+    val toLabel = if (movement.dest_goal_id != null) {
+        getGoalLabel(movement.dest_goal_id)
+    } else {
+        getAllocationLabel(movement.dest_budget_allocation_id)
+    }
+
+    return Pair(fromLabel, toLabel)
 }

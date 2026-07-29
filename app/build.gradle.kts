@@ -112,6 +112,8 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+  implementation("androidx.biometric:biometric:1.1.0")
+  implementation("androidx.security:security-crypto:1.1.0-alpha06")
   implementation("org.apache.poi:poi:5.2.5")
   implementation("org.apache.poi:poi-ooxml:5.2.5")
   // Uncomment to use Firestore:

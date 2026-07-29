@@ -6,6 +6,7 @@ import com.example.data.auth.AuthManager
 import com.example.data.db.AppDatabase
 import com.example.data.pref.UserPreferences
 import com.example.data.repository.FinanceRepository
+import com.example.data.security.SecurityManager
 
 class MeuFinanceiroApplication : Application() {
 
@@ -19,6 +20,9 @@ class MeuFinanceiroApplication : Application() {
         private set
 
     lateinit var authManager: AuthManager
+        private set
+
+    lateinit var securityManager: SecurityManager
         private set
 
     override fun onCreate() {
@@ -40,6 +44,7 @@ class MeuFinanceiroApplication : Application() {
         )
         userPreferences = UserPreferences(this)
         authManager = AuthManager()
+        securityManager = SecurityManager(this)
 
         // Schedule periodic notification worker (every 1 hour)
         try {

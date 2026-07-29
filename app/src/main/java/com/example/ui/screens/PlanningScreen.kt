@@ -1,7 +1,15 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -385,11 +393,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
         }
     }
 
-    LaunchedEffect(categories) {
-        if (expandedCategoryIds.isEmpty() && categories.isNotEmpty()) {
-            expandedCategoryIds = categories.map { it.id }.toSet()
-        }
-    }
+    // Categories start collapsed by default
 
     var expandedActionPanelId by remember { mutableStateOf<String?>(null) }
     var showQuickTransactionDialogFor by remember { mutableStateOf<Pair<Category, Subcategory?>?>(null) }
@@ -481,11 +485,11 @@ fun PlanningScreen(viewModel: MainViewModel) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 12.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (showClosureBanner) {
                     MonthClosureBanner(
@@ -615,28 +619,57 @@ fun PlanningScreen(viewModel: MainViewModel) {
                 }
             }
 
-            // Search field
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar categoria ou subcategoria...", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", modifier = Modifier.size(18.dp)) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Limpar", modifier = Modifier.size(18.dp))
+            // Search field (compact height with centered text)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
+                    .border(1.dp, Color(0xFFE4E6EA), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Buscar",
+                        modifier = Modifier.size(15.dp),
+                        tint = Color(0xFF73777F)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (searchQuery.isEmpty()) {
+                            Text("Buscar categoria ou subcategoria...", fontSize = 11.sp, color = Color(0xFF73777F))
                         }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                textStyle = MaterialTheme.typography.bodyMedium
-            )
-
-            // Fixed Table Header row
-            TableHeader()
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    if (searchQuery.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Limpar",
+                            tint = Color(0xFF73777F),
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { searchQuery = "" }
+                        )
+                    }
+                }
+            }
 
             // List Content (Category -> Subcategory hierarchy)
             Box(modifier = Modifier.weight(1f)) {
@@ -664,7 +697,10 @@ fun PlanningScreen(viewModel: MainViewModel) {
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         filteredCategoriesWithGoals.forEach { cat ->
                             val isCatExpanded = if (searchQuery.isNotEmpty()) true else expandedCategoryIds.contains(cat.id)
@@ -719,119 +755,142 @@ fun PlanningScreen(viewModel: MainViewModel) {
                             }
 
                             item(key = "cat_${cat.id}") {
-                                CategoryRowItem(
-                                    category = cat,
-                                    planejado = catPlanejado,
-                                    alocado = catAlocado,
-                                    gasto = catGasto,
-                                    isExpanded = isCatExpanded,
-                                    isActionPanelExpanded = false, // Category itself has no action panel
-                                    onToggle = {
-                                        expandedCategoryIds = if (isCatExpanded) {
-                                            expandedCategoryIds - cat.id
-                                        } else {
-                                            expandedCategoryIds + cat.id
-                                        }
-                                    },
-                                    onRowClick = {
-                                        expandedCategoryIds = if (isCatExpanded) {
-                                            expandedCategoryIds - cat.id
-                                        } else {
-                                            expandedCategoryIds + cat.id
-                                        }
-                                    },
-                                    onRowLongClick = {
-                                        if (cat.id != -999) {
-                                            viewModel.showHistoryDialog(cat, null)
-                                        }
-                                    },
-                                    onEditPlanned = {},
-                                    onEditAllocated = {},
-                                    onMoveMoney = {},
-                                    onNewTransaction = {},
-                                    onQuickAlign = {}
-                                )
-                            }
-
-                            if (isCatExpanded) {
-                                if (subsInCat.isEmpty()) {
-                                    item {
-                                        Text(
-                                            text = "    Nenhuma subcategoria.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                            modifier = Modifier.padding(start = 36.dp, top = 4.dp, bottom = 4.dp)
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = BorderStroke(1.dp, Color(0xFFE4E6EA)),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp, horizontal = 10.dp)
+                                    ) {
+                                        CategoryRowItem(
+                                            category = cat,
+                                            planejado = catPlanejado,
+                                            alocado = catAlocado,
+                                            gasto = catGasto,
+                                            isExpanded = isCatExpanded,
+                                            isActionPanelExpanded = expandedActionPanelId == "cat_${cat.id}",
+                                            onToggle = {
+                                                expandedCategoryIds = if (isCatExpanded) {
+                                                    expandedCategoryIds - cat.id
+                                                } else {
+                                                    expandedCategoryIds + cat.id
+                                                }
+                                            },
+                                            onRowClick = {
+                                                expandedCategoryIds = if (isCatExpanded) {
+                                                    expandedCategoryIds - cat.id
+                                                } else {
+                                                    expandedCategoryIds + cat.id
+                                                }
+                                            },
+                                            onRowLongClick = {
+                                                if (cat.id != -999) {
+                                                    viewModel.showHistoryDialog(cat, null)
+                                                }
+                                            },
+                                            onEditPlanned = { targetEditAllocation = Pair(cat, null) },
+                                            onEditAllocated = { targetAlocarAllocation = Pair(cat, null) },
+                                            onMoveMoney = { targetMoveAllocation = Pair(cat, null) },
+                                            onNewTransaction = { showQuickTransactionDialogFor = Pair(cat, null) },
+                                            onQuickAlign = {
+                                                quickAlignAlocadoToPlanejado(cat, null, catPlanejado, catAlocado)
+                                            }
                                         )
-                                    }
-                                } else {
-                                    items(subsInCat, key = { "sub_${it.id}" }) { sub ->
-                                        val isActionPanelExpanded = expandedActionPanelId == "sub_${sub.id}"
 
-                                        if (cat.id == -999) {
-                                            val gId = -sub.id - 1000
-                                            val goal = goals.firstOrNull { it.id == gId }
-                                            val subPlanejado = goalPlannedValues[gId] ?: 0.0
-                                            val subAlocadoWithRollover = goalAllocatedValues[gId] ?: 0.0
-                                            val subGasto = 0.0
+                                        if (isCatExpanded) {
+                                            if (subsInCat.isEmpty()) {
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text(
+                                                    text = "Nenhuma subcategoria.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color(0xFF73777F),
+                                                    modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)
+                                                )
+                                            } else {
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                HorizontalDivider(color = Color(0xFFE4E6EA).copy(alpha = 0.7f))
+                                                Spacer(modifier = Modifier.height(8.dp))
 
-                                            SubcategoryRowItem(
-                                                category = cat,
-                                                subcategory = sub,
-                                                planejado = subPlanejado,
-                                                alocado = subAlocadoWithRollover,
-                                                gasto = subGasto,
-                                                isActionPanelExpanded = isActionPanelExpanded,
-                                                onRowClick = {
-                                                    expandedActionPanelId = if (isActionPanelExpanded) null else "sub_${sub.id}"
-                                                },
-                                                onRowLongClick = {
-                                                    // No action history for virtual goal subcategories
-                                                },
-                                                onEditPlanned = {},
-                                                onEditAllocated = {
-                                                    targetAlocarGoal = goal
-                                                    targetAlocarGoalMode = "APORTAR"
-                                                },
-                                                onMoveMoney = {
-                                                    targetAlocarGoal = goal
-                                                    targetAlocarGoalMode = "RETIRAR"
-                                                },
-                                                onNewTransaction = {},
-                                                onQuickAlign = {
-                                                    if (goal != null) {
-                                                        quickAlignGoalAlocadoToPlanejado(goal, subPlanejado, subAlocadoWithRollover)
+                                                subsInCat.forEachIndexed { index, sub ->
+                                                    val isActionPanelExpanded = expandedActionPanelId == "sub_${sub.id}"
+
+                                                    if (cat.id == -999) {
+                                                        val gId = -sub.id - 1000
+                                                        val goal = goals.firstOrNull { it.id == gId }
+                                                        val subPlanejado = goalPlannedValues[gId] ?: 0.0
+                                                        val subAlocadoWithRollover = goalAllocatedValues[gId] ?: 0.0
+                                                        val subGasto = 0.0
+
+                                                        SubcategoryRowItem(
+                                                            category = cat,
+                                                            subcategory = sub,
+                                                            planejado = subPlanejado,
+                                                            alocado = subAlocadoWithRollover,
+                                                            gasto = subGasto,
+                                                            isActionPanelExpanded = isActionPanelExpanded,
+                                                            onRowClick = {
+                                                                expandedActionPanelId = if (isActionPanelExpanded) null else "sub_${sub.id}"
+                                                            },
+                                                            onRowLongClick = {
+                                                                // No action history for virtual goal subcategories
+                                                            },
+                                                            onEditPlanned = {},
+                                                            onEditAllocated = {
+                                                                targetAlocarGoal = goal
+                                                                targetAlocarGoalMode = "APORTAR"
+                                                            },
+                                                            onMoveMoney = {
+                                                                targetAlocarGoal = goal
+                                                                targetAlocarGoalMode = "RETIRAR"
+                                                            },
+                                                            onNewTransaction = {},
+                                                            onQuickAlign = {
+                                                                if (goal != null) {
+                                                                    quickAlignGoalAlocadoToPlanejado(goal, subPlanejado, subAlocadoWithRollover)
+                                                                }
+                                                            }
+                                                        )
+                                                    } else {
+                                                        val subInfo = allocationInfoMap[Pair(cat.id, sub.id)]
+                                                        val subPlanejado = subInfo?.first ?: 0.0
+                                                        val subAlocado = subInfo?.second ?: 0.0
+                                                        val subGasto = spentInfoMap[Pair(cat.id, sub.id)] ?: 0.0
+                                                        val prevSobra = prevSobraMap[Pair(cat.id, sub.id)] ?: 0.0
+                                                        val subAlocadoWithRollover = subAlocado + prevSobra
+
+                                                        SubcategoryRowItem(
+                                                            category = cat,
+                                                            subcategory = sub,
+                                                            planejado = subPlanejado,
+                                                            alocado = subAlocadoWithRollover,
+                                                            gasto = subGasto,
+                                                            isActionPanelExpanded = isActionPanelExpanded,
+                                                            onRowClick = {
+                                                                expandedActionPanelId = if (isActionPanelExpanded) null else "sub_${sub.id}"
+                                                            },
+                                                            onRowLongClick = {
+                                                                viewModel.showHistoryDialog(cat, sub)
+                                                            },
+                                                            onEditPlanned = { targetEditAllocation = Pair(cat, sub) },
+                                                            onEditAllocated = { targetAlocarAllocation = Pair(cat, sub) },
+                                                            onMoveMoney = { targetMoveAllocation = Pair(cat, sub) },
+                                                            onNewTransaction = { showQuickTransactionDialogFor = Pair(cat, sub) },
+                                                            onQuickAlign = {
+                                                                quickAlignAlocadoToPlanejado(cat, sub, subPlanejado, subAlocadoWithRollover)
+                                                            }
+                                                        )
+                                                    }
+
+                                                    if (index < subsInCat.size - 1) {
+                                                        Spacer(modifier = Modifier.height(8.dp))
                                                     }
                                                 }
-                                            )
-                                        } else {
-                                            val subInfo = allocationInfoMap[Pair(cat.id, sub.id)]
-                                            val subPlanejado = subInfo?.first ?: 0.0
-                                            val subAlocado = subInfo?.second ?: 0.0
-                                            val subGasto = spentInfoMap[Pair(cat.id, sub.id)] ?: 0.0
-                                            val prevSobra = prevSobraMap[Pair(cat.id, sub.id)] ?: 0.0
-                                            val subAlocadoWithRollover = subAlocado + prevSobra
-
-                                            SubcategoryRowItem(
-                                                category = cat,
-                                                subcategory = sub,
-                                                planejado = subPlanejado,
-                                                alocado = subAlocadoWithRollover,
-                                                gasto = subGasto,
-                                                isActionPanelExpanded = isActionPanelExpanded,
-                                                onRowClick = {
-                                                    expandedActionPanelId = if (isActionPanelExpanded) null else "sub_${sub.id}"
-                                                },
-                                                onRowLongClick = {
-                                                    viewModel.showHistoryDialog(cat, sub)
-                                                },
-                                                onEditPlanned = { targetEditAllocation = Pair(cat, sub) },
-                                                onEditAllocated = { targetAlocarAllocation = Pair(cat, sub) },
-                                                onMoveMoney = { targetMoveAllocation = Pair(cat, sub) },
-                                                onNewTransaction = { showQuickTransactionDialogFor = Pair(cat, sub) },
-                                                onQuickAlign = {
-                                                    quickAlignAlocadoToPlanejado(cat, sub, subPlanejado, subAlocadoWithRollover)
-                                                }
-                                            )
+                                            }
                                         }
                                     }
                                 }
@@ -1738,52 +1797,147 @@ fun TableRowLayout(
     }
 }
 
+fun getCategoryIcon(name: String): ImageVector {
+    val lower = name.lowercase()
+    return when {
+        lower.contains("alimenta") || lower.contains("comida") || lower.contains("restaurante") -> Icons.Default.Restaurant
+        lower.contains("almoço") || lower.contains("almoco") -> Icons.Default.RiceBowl
+        lower.contains("janta") || lower.contains("refeição") -> Icons.Default.DinnerDining
+        lower.contains("supermercado") || lower.contains("mercado") || lower.contains("feira") -> Icons.Default.ShoppingCart
+        lower.contains("transporte") || lower.contains("carro") || lower.contains("uber") || lower.contains("combustivel") -> Icons.Default.DirectionsCar
+        lower.contains("moradia") || lower.contains("casa") || lower.contains("aluguel") -> Icons.Default.Home
+        lower.contains("saude") || lower.contains("saúde") || lower.contains("farmacia") || lower.contains("médico") -> Icons.Default.LocalHospital
+        lower.contains("lazer") || lower.contains("viagem") || lower.contains("entretenimento") -> Icons.Default.SportsEsports
+        lower.contains("educa") || lower.contains("curso") || lower.contains("escola") -> Icons.Default.School
+        lower.contains("meta") -> Icons.Default.Flag
+        else -> Icons.Default.Category
+    }
+}
+
+private fun formatPlanningMoney(value: Double): String {
+    val currencyFormatter = NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
+    return currencyFormatter.format(value)
+}
+
+private fun getPlanningAvailabilityInfo(alocado: Double, gasto: Double): Pair<String, Color> {
+    val disponivel = alocado - gasto
+    val formatted = formatPlanningMoney(Math.abs(disponivel))
+    return if (disponivel >= 0) {
+        Pair("$formatted disponíveis", Color(0xFF25834A))
+    } else {
+        Pair("$formatted acima", Color(0xFFC93A35))
+    }
+}
+
 @Composable
-fun TableHeader() {
+fun BudgetValuesGrid(
+    planejado: Double,
+    alocado: Double,
+    gasto: Double,
+    isMeta: Boolean = false
+) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "Planejamento",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f)
+        // Coluna 1: Planejado
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = "Planejado",
+                fontSize = 10.sp,
+                color = Color(0xFF73777F)
+            )
+            Text(
+                text = formatPlanningMoney(planejado),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        // Coluna 2: Alocado
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = "Alocado",
+                fontSize = 10.sp,
+                color = Color(0xFF73777F)
+            )
+            Text(
+                text = formatPlanningMoney(alocado),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        // Coluna 3: Gasto
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            if (!isMeta) {
+                Text(
+                    text = "Gasto",
+                    fontSize = 10.sp,
+                    color = Color(0xFF73777F)
+                )
+                Text(
+                    text = formatPlanningMoney(gasto),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun BudgetProgressIndicator(
+    progressFloat: Float,
+    pctInt: Int,
+    progressColor: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LinearProgressIndicator(
+            progress = { progressFloat },
+            modifier = Modifier
+                .weight(1f)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp)),
+            color = progressColor,
+            trackColor = Color(0xFFF0F2F5)
         )
 
-        Text(
-            text = "Alocação",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f)
-        )
+        Spacer(modifier = Modifier.width(8.dp))
 
         Text(
-            text = "Gasto",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = "$pctInt%",
+            modifier = Modifier.width(36.dp),
             textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f)
-        )
-
-        Text(
-            text = "Disponível",
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.bodySmall,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(1.1f)
+            color = progressColor
         )
     }
 }
 
+@Composable
+fun TableHeader() {
+    // Legacy fixed table header replaced by modern self-contained cards
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CategoryRowItem(
     category: Category,
@@ -1802,133 +1956,200 @@ fun CategoryRowItem(
     onNewTransaction: () -> Unit,
     onQuickAlign: () -> Unit
 ) {
-    val disponivel = alocado - gasto
-    val progress = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
-    val progressColor = when {
-        planejado == 0.0 && alocado == 0.0 && gasto == 0.0 -> Color.Gray
-        gasto > alocado -> MaterialTheme.colorScheme.error
-        gasto > planejado && gasto <= alocado -> Color(0xFFEF6C00)
-        else -> Color(0xFF2E7D32)
-    }
-
     val isMeta = category.id == -999
+    val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto)
+    val isOverLimit = !isMeta && (gasto > alocado && alocado > 0.0 || (alocado == 0.0 && gasto > 0.0))
 
-    TableRowLayout(
-        indentation = 16.dp,
-        nameContent = {
-            if (showToggle) {
-                Icon(
-                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clickable { onToggle() }
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-            }
-            Text(
-                text = category.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
+    val baseVal = if (alocado > 0) alocado else if (planejado > 0) planejado else 0.0
+    val progressFloat = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
+    val pctInt = if (baseVal > 0) ((gasto / baseVal) * 100).toInt() else 0
+    val progressColor = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF25834A)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onRowClick,
+                onLongClick = onRowLongClick
             )
-            if (planejado != alocado || (gasto > 0.0 && alocado == 0.0)) {
-                Spacer(modifier = Modifier.width(4.dp))
+            .padding(vertical = 1.dp)
+    ) {
+        // Line 1: Icon Avatar + Category Name + Toggle Arrow + Status + Chevron
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(if (isOverLimit) Color(0xFFFFEBEE) else Color(0xFFE0F2F1)),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "Planejado e Alocado diferem",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                    imageVector = getCategoryIcon(category.name),
+                    contentDescription = null,
+                    tint = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF0F9488),
                     modifier = Modifier.size(14.dp)
                 )
             }
-        },
-        planejado = planejado,
-        alocado = alocado,
-        gasto = if (isMeta) 0.0 else gasto,
-        disponivel = if (isMeta) alocado else disponivel,
-        onRowClick = onRowClick,
-        onRowLongClick = onRowLongClick,
-        showProgress = !isMeta,
-        progressColor = progressColor,
-        progress = progress,
-        isMeta = isMeta,
-        actionPanelContent = {
-            AnimatedVisibility(
-                visible = isActionPanelExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                        .padding(vertical = 4.dp, horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Planejar
-                    TextButton(
-                        onClick = onEditPlanned,
-                        modifier = Modifier.testTag("action_planejar_${category.id}"),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Planejar", fontSize = 10.sp)
-                    }
 
-                    // Alocar
-                    TextButton(
-                        onClick = onEditAllocated,
-                        modifier = Modifier.testTag("action_alocar_${category.id}"),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Alocar", fontSize = 10.sp)
-                    }
-                    
-                    // Mover
-                    TextButton(
-                        onClick = onMoveMoney,
-                        modifier = Modifier.testTag("action_mover_${category.id}"),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Mover", fontSize = 10.sp)
-                    }
-                    
-                    // Nova Transação
-                    TextButton(
-                        onClick = onNewTransaction,
-                        modifier = Modifier.testTag("action_nova_transacao_${category.id}"),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Nova Transação", fontSize = 10.sp)
-                    }
-                    
-                    // Ajuste (Quick Align)
-                    TextButton(
-                        onClick = onQuickAlign,
-                        modifier = Modifier.testTag("action_ajuste_${category.id}"),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Ajuste", fontSize = 10.sp)
-                    }
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = category.name,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                if (showToggle) {
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Expandir/Recolher",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { onToggle() }
+                    )
+                }
+
+                if (planejado != alocado || (gasto > 0.0 && alocado == 0.0)) {
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Aviso",
+                        tint = Color(0xFFC93A35),
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            Text(
+                text = if (isMeta) "${formatPlanningMoney(alocado)} acumulados" else statusText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isMeta) Color(0xFF25834A) else statusColor,
+                textAlign = TextAlign.End
+            )
+
+            Spacer(modifier = Modifier.width(2.dp))
+
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = Color(0xFF9E9E9E),
+                modifier = Modifier.size(15.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Line 2: Values Summary (Planejado, Alocado, Gasto in 3 clean columns) - aligned with Subcategory (20.dp start padding)
+        Box(modifier = Modifier.padding(start = 20.dp)) {
+            BudgetValuesGrid(
+                planejado = planejado,
+                alocado = alocado,
+                gasto = gasto,
+                isMeta = isMeta
+            )
+        }
+
+        // Line 3: Progress Bar & Percentage - aligned with Subcategory (20.dp start padding)
+        if (!isMeta) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Box(modifier = Modifier.padding(start = 20.dp)) {
+                BudgetProgressIndicator(
+                    progressFloat = progressFloat,
+                    pctInt = pctInt,
+                    progressColor = progressColor
+                )
+            }
+        }
+
+        // Action Panel if expanded
+        AnimatedVisibility(
+            visible = isActionPanelExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(vertical = 4.dp, horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onEditPlanned,
+                    modifier = Modifier.testTag("action_planejar_${category.id}"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Planejar", fontSize = 10.sp)
+                }
+
+                TextButton(
+                    onClick = onEditAllocated,
+                    modifier = Modifier.testTag("action_alocar_${category.id}"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Alocar", fontSize = 10.sp)
+                }
+
+                TextButton(
+                    onClick = onMoveMoney,
+                    modifier = Modifier.testTag("action_mover_${category.id}"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Mover", fontSize = 10.sp)
+                }
+
+                TextButton(
+                    onClick = onNewTransaction,
+                    modifier = Modifier.testTag("action_nova_transacao_${category.id}"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Nova Transação", fontSize = 10.sp)
+                }
+
+                TextButton(
+                    onClick = onQuickAlign,
+                    modifier = Modifier.testTag("action_ajuste_${category.id}"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Ajuste", fontSize = 10.sp)
                 }
             }
         }
-    )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SubcategoryRowItem(
     category: Category,
@@ -1937,6 +2158,8 @@ fun SubcategoryRowItem(
     alocado: Double,
     gasto: Double,
     isActionPanelExpanded: Boolean,
+    isFirst: Boolean = false,
+    isLast: Boolean = false,
     onRowClick: () -> Unit,
     onRowLongClick: (() -> Unit)? = null,
     onEditPlanned: () -> Unit,
@@ -1945,48 +2168,136 @@ fun SubcategoryRowItem(
     onNewTransaction: () -> Unit,
     onQuickAlign: () -> Unit
 ) {
-    val disponivel = alocado - gasto
-    val progress = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
-    val progressColor = when {
-        planejado == 0.0 && alocado == 0.0 && gasto == 0.0 -> Color.Gray
-        gasto > alocado -> MaterialTheme.colorScheme.error
-        gasto > planejado && gasto <= alocado -> Color(0xFFEF6C00)
-        else -> Color(0xFF2E7D32)
-    }
-
     val isMeta = category.id == -999
+    val (statusText, statusColor) = getPlanningAvailabilityInfo(if (isMeta) alocado else alocado, if (isMeta) 0.0 else gasto)
+    val isOverLimit = !isMeta && (gasto > alocado && alocado > 0.0 || (alocado == 0.0 && gasto > 0.0))
 
-    TableRowLayout(
-        indentation = 32.dp,
-        nameContent = {
-            Text(
-                text = subcategory.name,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
+    val baseVal = if (alocado > 0) alocado else if (planejado > 0) planejado else 0.0
+    val progressFloat = if (alocado > 0) (gasto / alocado).toFloat().coerceIn(0f, 1f) else 0f
+    val pctInt = if (baseVal > 0) ((gasto / baseVal) * 100).toInt() else 0
+    val progressColor = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF25834A)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .combinedClickable(
+                onClick = onRowClick,
+                onLongClick = onRowLongClick
             )
-            if (planejado != alocado || (gasto > 0.0 && alocado == 0.0)) {
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "Planejado e Alocado diferem",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                    modifier = Modifier.size(12.dp)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        // Connector line: continuous dashed vertical line from Category down to Subcategories
+        Box(
+            modifier = Modifier
+                .width(20.dp)
+                .fillMaxHeight()
+        ) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val strokeWidth = 1.5.dp.toPx()
+                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                val connectorColor = Color(0xFF80CBC4)
+
+                val lineX = 13.dp.toPx() // Aligned under category icon center (13.dp)
+                val iconCenterY = 11.dp.toPx() // Center Y of the 22.dp subcategory icon
+
+                // If last subcategory, stop line at the icon center
+                val lineBottom = if (isLast) iconCenterY else size.height
+
+                drawLine(
+                    color = connectorColor,
+                    start = Offset(x = lineX, y = 0f),
+                    end = Offset(x = lineX, y = lineBottom),
+                    strokeWidth = strokeWidth,
+                    pathEffect = dashEffect
+                )
+                drawLine(
+                    color = connectorColor,
+                    start = Offset(x = lineX, y = iconCenterY),
+                    end = Offset(x = size.width, y = iconCenterY),
+                    strokeWidth = strokeWidth,
+                    pathEffect = dashEffect
                 )
             }
-        },
-        planejado = planejado,
-        alocado = alocado,
-        gasto = if (isMeta) 0.0 else gasto,
-        disponivel = if (isMeta) alocado else disponivel,
-        onRowClick = onRowClick,
-        onRowLongClick = onRowLongClick,
-        showProgress = !isMeta,
-        progressColor = progressColor,
-        progress = progress,
-        isMeta = isMeta,
-        actionPanelContent = {
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            // Line 1: Subcategory Icon + Name + Status + Chevron
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(if (isOverLimit) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = getCategoryIcon(subcategory.name),
+                        contentDescription = null,
+                        tint = if (isOverLimit) Color(0xFFC93A35) else Color(0xFF0F9488),
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Text(
+                    text = subcategory.name,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Text(
+                    text = if (isMeta) "${formatPlanningMoney(alocado)} acumulados" else statusText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isMeta) Color(0xFF25834A) else statusColor,
+                    textAlign = TextAlign.End
+                )
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFF9E9E9E),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            // Line 2: Values in 3 clean columns
+            BudgetValuesGrid(
+                planejado = planejado,
+                alocado = alocado,
+                gasto = gasto,
+                isMeta = isMeta
+            )
+
+            // Line 3: Progress bar & Percentage
+            if (!isMeta) {
+                Spacer(modifier = Modifier.height(3.dp))
+                BudgetProgressIndicator(
+                    progressFloat = progressFloat,
+                    pctInt = pctInt,
+                    progressColor = progressColor
+                )
+            }
+
+            // Action Panel if expanded
             AnimatedVisibility(
                 visible = isActionPanelExpanded,
                 enter = expandVertically() + fadeIn(),
@@ -1995,12 +2306,15 @@ fun SubcategoryRowItem(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                        .padding(top = 6.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(vertical = 2.dp, horizontal = 2.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Planejar
                     TextButton(
                         onClick = onEditPlanned,
                         modifier = Modifier.testTag("action_planejar_${subcategory.id}"),
@@ -2011,7 +2325,6 @@ fun SubcategoryRowItem(
                         Text("Planejar", fontSize = 9.sp)
                     }
 
-                    // Alocar
                     TextButton(
                         onClick = onEditAllocated,
                         modifier = Modifier.testTag("action_alocar_${subcategory.id}"),
@@ -2021,8 +2334,7 @@ fun SubcategoryRowItem(
                         Spacer(modifier = Modifier.width(2.dp))
                         Text("Alocar", fontSize = 9.sp)
                     }
-                    
-                    // Mover
+
                     TextButton(
                         onClick = onMoveMoney,
                         modifier = Modifier.testTag("action_mover_${subcategory.id}"),
@@ -2032,8 +2344,7 @@ fun SubcategoryRowItem(
                         Spacer(modifier = Modifier.width(2.dp))
                         Text("Mover", fontSize = 9.sp)
                     }
-                    
-                    // Nova Transação
+
                     if (!isMeta) {
                         TextButton(
                             onClick = onNewTransaction,
@@ -2045,8 +2356,7 @@ fun SubcategoryRowItem(
                             Text("Nova Transação", fontSize = 9.sp)
                         }
                     }
-                    
-                    // Ajuste (Quick Align)
+
                     TextButton(
                         onClick = onQuickAlign,
                         modifier = Modifier.testTag("action_ajuste_${subcategory.id}"),
@@ -2059,7 +2369,7 @@ fun SubcategoryRowItem(
                 }
             }
         }
-    )
+    }
 }
 
 // --- COMPLEX DISTRIBUTE DIALOG ---

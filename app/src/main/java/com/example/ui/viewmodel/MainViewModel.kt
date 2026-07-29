@@ -28,6 +28,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository: FinanceRepository = app.repository
     val userPreferences: UserPreferences = app.userPreferences
     val authManager: AuthManager = app.authManager
+    val securityManager: com.example.data.security.SecurityManager = app.securityManager
+
+    // --- Security states ---
+    private val _securityEnabled = MutableStateFlow(securityManager.isSecurityEnabled())
+    val securityEnabled: StateFlow<Boolean> = _securityEnabled.asStateFlow()
+
+    private val _authMethod = MutableStateFlow(securityManager.getAuthMethod())
+    val authMethod: StateFlow<String> = _authMethod.asStateFlow()
+
+    fun refreshSecurityState() {
+        _securityEnabled.value = securityManager.isSecurityEnabled()
+        _authMethod.value = securityManager.getAuthMethod()
+    }
+
+    fun setSecurityEnabled(enabled: Boolean) {
+        securityManager.setSecurityEnabled(enabled)
+        _securityEnabled.value = enabled
+    }
+
+    fun setAuthMethod(method: String) {
+        securityManager.setAuthMethod(method)
+        _authMethod.value = method
+    }
+
+    fun setPin(pin: String) {
+        securityManager.setPin(pin)
+    }
+
+    fun verifyPin(pin: String): Boolean {
+        return securityManager.verifyPin(pin)
+    }
+
+    fun isBiometricAvailable(): Boolean {
+        return securityManager.isBiometricAvailable()
+    }
 
     // --- Preferences states ---
     val themeMode: StateFlow<String> = userPreferences.themeModeFlow

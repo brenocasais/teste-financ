@@ -141,6 +141,13 @@ fun SettingsScreen(
             )
         }
 
+        // 11.11 SEGURANÇA E BIOMETRIA
+        item {
+            SecuritySettingsCard(
+                viewModel = viewModel
+            )
+        }
+
         item {
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -1946,4 +1953,309 @@ fun NotificationToggleRow(
             modifier = Modifier.testTag("toggle_${title.replace(" ", "_").lowercase()}")
         )
     }
+}
+
+@Composable
+fun SecuritySettingsCard(
+    viewModel: MainViewModel,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val securityEnabled by viewModel.securityEnabled.collectAsStateWithLifecycle()
+    val authMethod by viewModel.authMethod.collectAsStateWithLifecycle()
+    val isBiometricAvailable = remember { viewModel.isBiometricAvailable() }
+
+    var showPinSetupDialog by remember { mutableStateOf(false) }
+    var pendingAuthMethodSelection by remember { mutableStateOf<String?>(null) }
+
+    if (showPinSetupDialog) {
+        PinSetupDialog(
+            isChange = viewModel.securityManager.hasPin(),
+            onDismiss = {
+                showPinSetupDialog = false
+                pendingAuthMethodSelection = null
+            },
+            onSavePin = { newPin ->
+                viewModel.setPin(newPin)
+                viewModel.setSecurityEnabled(true)
+                if (pendingAuthMethodSelection != null) {
+                    viewModel.setAuthMethod(pendingAuthMethodSelection!!)
+                    pendingAuthMethodSelection = null
+                }
+                showPinSetupDialog = false
+            }
+        )
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Segurança e Acesso",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (securityEnabled) "Proteção ativa (${if (authMethod == "BIOMETRIC") "Biometria" else "PIN"})" else "Proteção desativada",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (securityEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Main Protection Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Proteger com senha/biometria",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Exige autenticação ao abrir o aplicativo. Salvo localmente neste aparelho.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = securityEnabled,
+                            onCheckedChange = { enable ->
+                                if (enable) {
+                                    if (!viewModel.securityManager.hasPin()) {
+                                        showPinSetupDialog = true
+                                    } else {
+                                        viewModel.setSecurityEnabled(true)
+                                    }
+                                } else {
+                                    viewModel.setSecurityEnabled(false)
+                                }
+                            }
+                        )
+                    }
+
+                    if (securityEnabled) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                        // Method selection
+                        Text(
+                            text = "Método de Autenticação",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        // Option 1: PIN
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (authMethod == "PIN") MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    else Color.Transparent
+                                )
+                                .clickable {
+                                    if (!viewModel.securityManager.hasPin()) {
+                                        pendingAuthMethodSelection = "PIN"
+                                        showPinSetupDialog = true
+                                    } else {
+                                        viewModel.setAuthMethod("PIN")
+                                    }
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = authMethod == "PIN",
+                                onClick = {
+                                    if (!viewModel.securityManager.hasPin()) {
+                                        pendingAuthMethodSelection = "PIN"
+                                        showPinSetupDialog = true
+                                    } else {
+                                        viewModel.setAuthMethod("PIN")
+                                    }
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Default.Pin, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("PIN de 4-6 dígitos", fontWeight = FontWeight.SemiBold)
+                                Text("Digite uma senha numérica para desbloquear", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        // Option 2: Biometrics (Only shown if available on device)
+                        if (isBiometricAvailable) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (authMethod == "BIOMETRIC") MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        if (!viewModel.securityManager.hasPin()) {
+                                            pendingAuthMethodSelection = "BIOMETRIC"
+                                            showPinSetupDialog = true
+                                        } else {
+                                            viewModel.setAuthMethod("BIOMETRIC")
+                                        }
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = authMethod == "BIOMETRIC",
+                                    onClick = {
+                                        if (!viewModel.securityManager.hasPin()) {
+                                            pendingAuthMethodSelection = "BIOMETRIC"
+                                            showPinSetupDialog = true
+                                        } else {
+                                            viewModel.setAuthMethod("BIOMETRIC")
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(Icons.Default.Fingerprint, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Biometria do Aparelho (Digital/Face)", fontWeight = FontWeight.SemiBold)
+                                    Text("Usa os sensores nativos do sistema operacional", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        // Change PIN Button
+                        OutlinedButton(
+                            onClick = { showPinSetupDialog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.LockReset, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (viewModel.securityManager.hasPin()) "Alterar PIN de Acesso" else "Cadastrar PIN de Acesso")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PinSetupDialog(
+    isChange: Boolean,
+    onDismiss: () -> Unit,
+    onSavePin: (String) -> Unit
+) {
+    var createPin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (isChange) "Alterar PIN de Acesso" else "Cadastrar PIN de Acesso", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = "O PIN deve conter entre 4 e 6 dígitos numéricos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = createPin,
+                    onValueChange = { input ->
+                        if (input.all { it.isDigit() } && input.length <= 6) {
+                            createPin = input
+                            errorMessage = null
+                        }
+                    },
+                    label = { Text("Criar PIN (4-6 dígitos)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = confirmPin,
+                    onValueChange = { input ->
+                        if (input.all { it.isDigit() } && input.length <= 6) {
+                            confirmPin = input
+                            errorMessage = null
+                        }
+                    },
+                    label = { Text("Confirmar PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (createPin.length !in 4..6) {
+                        errorMessage = "O PIN deve ter entre 4 e 6 dígitos."
+                    } else if (createPin != confirmPin) {
+                        errorMessage = "Os dois PINs digitados não coincidem."
+                    } else {
+                        onSavePin(createPin)
+                    }
+                }
+            ) {
+                Text("Salvar PIN")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }

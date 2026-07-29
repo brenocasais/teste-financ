@@ -1,7 +1,7 @@
 package com.example
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -11,12 +11,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.auth.AuthManager
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.MainScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.AppLockScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
 
@@ -29,7 +33,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.app.AlertDialog
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val viewModel: MainViewModel by viewModels {
         MainViewModel.Factory(application)
@@ -77,6 +81,9 @@ class MainActivity : ComponentActivity() {
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             val authState by viewModel.authState.collectAsStateWithLifecycle()
             val onboardingCompleted by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
+            val securityEnabled by viewModel.securityEnabled.collectAsStateWithLifecycle()
+
+            var isAppUnlocked by remember { mutableStateOf(!viewModel.securityManager.isSecurityEnabled()) }
 
             val useDarkTheme = when (themeMode) {
                 "LIGHT" -> false
@@ -89,25 +96,32 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    when {
-                        authState is AuthManager.AuthState.Unauthenticated -> {
-                            LoginScreen(
-                                viewModel = viewModel,
-                                onLoginSuccess = {
-                                    // Reactively handled by state updates
-                                }
-                            )
-                        }
-                        !onboardingCompleted -> {
-                            OnboardingScreen(
-                                viewModel = viewModel,
-                                onOnboardingFinished = {
-                                    // Reactively handled by state updates
-                                }
-                            )
-                        }
-                        else -> {
-                            MainScreen(viewModel = viewModel)
+                    if (securityEnabled && !isAppUnlocked) {
+                        AppLockScreen(
+                            viewModel = viewModel,
+                            onUnlocked = { isAppUnlocked = true }
+                        )
+                    } else {
+                        when {
+                            authState is AuthManager.AuthState.Unauthenticated -> {
+                                LoginScreen(
+                                    viewModel = viewModel,
+                                    onLoginSuccess = {
+                                        // Reactively handled by state updates
+                                    }
+                                )
+                            }
+                            !onboardingCompleted -> {
+                                OnboardingScreen(
+                                    viewModel = viewModel,
+                                    onOnboardingFinished = {
+                                        // Reactively handled by state updates
+                                    }
+                                )
+                            }
+                            else -> {
+                                MainScreen(viewModel = viewModel)
+                            }
                         }
                     }
                 }

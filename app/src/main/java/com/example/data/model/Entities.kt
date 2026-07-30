@@ -13,23 +13,14 @@ data class Account(
     val userId: String = ""
 )
 
-@Entity(tableName = "envelope_groups")
-data class EnvelopeGroup(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val name: String,
-    val sort_order: Int,
-    val budget_rule_type: String?, // NECESSIDADE, DESEJO, POUPANCA
-    val archived: Boolean = false,
-    val userId: String = ""
-)
-
 @Entity(tableName = "categories")
 data class Category(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val envelope_group_id: Int? = null, // nullable — categoria pode ficar sem envelope
     val name: String,
     val archived: Boolean = false,
-    val userId: String = ""
+    val userId: String = "",
+    val icon: String? = null,
+    val budget_rule_type: String? = null // NECESSIDADE, DESEJO, POUPANCA
 )
 
 @Entity(tableName = "subcategories")
@@ -38,7 +29,8 @@ data class Subcategory(
     val category_id: Int,
     val name: String,
     val archived: Boolean = false,
-    val userId: String = ""
+    val userId: String = "",
+    val icon: String? = null
 )
 
 @Entity(tableName = "transactions")
@@ -127,6 +119,7 @@ data class Goal(
     val deadline: String,        // formato YYYY-MM (Fase 8)
     val color: Int,
     val archived: Boolean = false,
+    val is_paused: Boolean = false,
     val userId: String = ""
 )
 

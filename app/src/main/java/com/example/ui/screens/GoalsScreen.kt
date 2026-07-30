@@ -346,13 +346,13 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     goals.filter { goal ->
                         val currentVal = goalBalances[goal.id] ?: 0.0
                         val isReached = currentVal >= goal.target_value
-                        val isPaused = goal.archived
+                        val isPaused = goal.is_paused
 
                         when (selectedFilter) {
-                            "EM_ANDAMENTO" -> !isReached && !isPaused
-                            "CONCLUIDAS" -> isReached
-                            "PAUSADAS" -> isPaused
-                            else -> true
+                            "EM_ANDAMENTO" -> !isReached && !isPaused && !goal.archived
+                            "CONCLUIDAS" -> isReached && !goal.archived
+                            "PAUSADAS" -> isPaused && !goal.archived
+                            else -> !goal.archived
                         }
                     }
                 }
@@ -640,20 +640,35 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                         )
                     }
 
-                    // Hide / Edit / Delete options
+                    // Hide / Pause / Edit / Delete options
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(
+                            onClick = {
+                                val newPaused = !selectedGoal.is_paused
+                                viewModel.updateGoal(selectedGoal.copy(is_paused = newPaused))
+                                val msg = if (newPaused) "Meta pausada" else "Meta reativada"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("toggle_pause_goal_detail")
+                        ) {
+                            Icon(
+                                imageVector = if (selectedGoal.is_paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                contentDescription = if (selectedGoal.is_paused) "Reativar meta" else "Pausar meta",
+                                tint = secondaryTextColor
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 val newArchived = !selectedGoal.archived
                                 viewModel.updateGoal(selectedGoal.copy(archived = newArchived))
-                                val msg = if (newArchived) "Meta ocultada/pausada" else "Meta visível/reativada"
+                                val msg = if (newArchived) "Meta arquivada" else "Meta desarquivada"
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.testTag("toggle_hide_goal_detail")
                         ) {
                             Icon(
                                 imageVector = if (selectedGoal.archived) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (selectedGoal.archived) "Exibir meta" else "Ocultar meta",
+                                contentDescription = if (selectedGoal.archived) "Desarquivar meta" else "Arquivar meta",
                                 tint = secondaryTextColor
                             )
                         }

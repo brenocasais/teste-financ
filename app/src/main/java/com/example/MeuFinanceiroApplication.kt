@@ -31,7 +31,6 @@ class MeuFinanceiroApplication : Application() {
         database = AppDatabase.getDatabase(this)
         repository = FinanceRepository(
             accountDao = database.accountDao(),
-            envelopeGroupDao = database.envelopeGroupDao(),
             categoryDao = database.categoryDao(),
             subcategoryDao = database.subcategoryDao(),
             transactionDao = database.transactionDao(),

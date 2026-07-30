@@ -11,7 +11,6 @@ import java.util.Date
 
 class FinanceRepository(
     private val accountDao: AccountDao,
-    private val envelopeGroupDao: EnvelopeGroupDao,
     private val categoryDao: CategoryDao,
     private val subcategoryDao: SubcategoryDao,
     private val transactionDao: TransactionDao,
@@ -448,13 +447,6 @@ class FinanceRepository(
     }
 
 
-    // --- ENVELOPE GROUPS ---
-    fun getEnvelopeGroupsFlow(userId: String): Flow<List<EnvelopeGroup>> = envelopeGroupDao.getEnvelopeGroupsFlow(userId)
-    suspend fun getAllEnvelopeGroups(userId: String): List<EnvelopeGroup> = envelopeGroupDao.getAllEnvelopeGroups(userId)
-    suspend fun insertEnvelopeGroup(group: EnvelopeGroup): Long = envelopeGroupDao.insert(group)
-    suspend fun updateEnvelopeGroup(group: EnvelopeGroup) = envelopeGroupDao.update(group)
-    suspend fun deleteEnvelopeGroup(group: EnvelopeGroup) = envelopeGroupDao.delete(group)
-
     // --- CATEGORIES ---
     fun getCategoriesFlow(userId: String): Flow<List<Category>> = categoryDao.getCategoriesFlow(userId)
     suspend fun getAllCategories(userId: String): List<Category> = categoryDao.getAllCategories(userId)
@@ -488,7 +480,6 @@ class FinanceRepository(
         if (userId.isEmpty() || userId == "GUEST") return false
         return try {
             val accounts = getAllAccounts(userId).map { it.toMap() }
-            val groups = getAllEnvelopeGroups(userId).map { it.toMap() }
             val categories = getAllCategories(userId).map { it.toMap() }
             val subcategories = getAllSubcategories(userId).map { it.toMap() }
             val transactions = getAllTransactions(userId).map { it.toMap() }
@@ -501,7 +492,6 @@ class FinanceRepository(
 
             val syncData = mapOf(
                 "accounts" to accounts,
-                "envelope_groups" to groups,
                 "categories" to categories,
                 "subcategories" to subcategories,
                 "transactions" to transactions,
@@ -538,16 +528,6 @@ class FinanceRepository(
                     accountDao.insertAll(accountsList)
                 } else {
                     Log.w("FinanceRepository", "Pull: 'accounts' field is null or missing. Skipping accounts sync.")
-                }
-
-                // Process Envelope Groups
-                val groupsList = (data["envelope_groups"] as? List<*>)?.mapNotNull { item ->
-                    (item as? Map<*, *>)?.let { envelopeGroupFromMap(it.castKeys(), userId) }
-                }
-                if (groupsList != null) {
-                    envelopeGroupDao.insertAll(groupsList)
-                } else {
-                    Log.w("FinanceRepository", "Pull: 'envelope_groups' field is null or missing. Skipping envelope groups sync.")
                 }
 
                 // Process Categories
@@ -672,43 +652,29 @@ class FinanceRepository(
         userId = userId
     )
 
-    private fun EnvelopeGroup.toMap(): Map<String, Any?> = mapOf(
-        "id" to id,
-        "name" to name,
-        "sort_order" to sort_order,
-        "budget_rule_type" to budget_rule_type,
-        "archived" to archived
-    )
-
-    private fun envelopeGroupFromMap(map: Map<String, Any?>, userId: String): EnvelopeGroup = EnvelopeGroup(
-        id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
-        name = map["name"] as? String ?: "",
-        sort_order = (map["sort_order"] as? Long)?.toInt() ?: (map["sort_order"] as? Int) ?: 0,
-        budget_rule_type = map["budget_rule_type"] as? String,
-        archived = map["archived"] as? Boolean ?: false,
-        userId = userId
-    )
-
     private fun Category.toMap(): Map<String, Any?> = mapOf(
         "id" to id,
-        "envelope_group_id" to envelope_group_id,
         "name" to name,
-        "archived" to archived
+        "archived" to archived,
+        "icon" to icon,
+        "budget_rule_type" to budget_rule_type
     )
 
     private fun categoryFromMap(map: Map<String, Any?>, userId: String): Category = Category(
         id = (map["id"] as? Long)?.toInt() ?: (map["id"] as? Int) ?: 0,
-        envelope_group_id = (map["envelope_group_id"] as? Long)?.toInt() ?: (map["envelope_group_id"] as? Int),
         name = map["name"] as? String ?: "",
         archived = map["archived"] as? Boolean ?: false,
-        userId = userId
+        userId = userId,
+        icon = map["icon"] as? String,
+        budget_rule_type = map["budget_rule_type"] as? String
     )
 
     private fun Subcategory.toMap(): Map<String, Any?> = mapOf(
         "id" to id,
         "category_id" to category_id,
         "name" to name,
-        "archived" to archived
+        "archived" to archived,
+        "icon" to icon
     )
 
     private fun subcategoryFromMap(map: Map<String, Any?>, userId: String): Subcategory = Subcategory(
@@ -716,7 +682,8 @@ class FinanceRepository(
         category_id = (map["category_id"] as? Long)?.toInt() ?: (map["category_id"] as? Int) ?: 0,
         name = map["name"] as? String ?: "",
         archived = map["archived"] as? Boolean ?: false,
-        userId = userId
+        userId = userId,
+        icon = map["icon"] as? String
     )
 
     private fun Transaction.toMap(): Map<String, Any?> = mapOf(
@@ -865,7 +832,8 @@ class FinanceRepository(
         "start_date" to start_date,
         "deadline" to deadline,
         "color" to color,
-        "archived" to archived
+        "archived" to archived,
+        "is_paused" to is_paused
     )
 
     private fun goalFromMap(map: Map<String, Any?>, userId: String): Goal = Goal(
@@ -876,6 +844,7 @@ class FinanceRepository(
         deadline = map["deadline"] as? String ?: "",
         color = (map["color"] as? Long)?.toInt() ?: (map["color"] as? Int) ?: 0,
         archived = map["archived"] as? Boolean ?: false,
+        is_paused = map["is_paused"] as? Boolean ?: false,
         userId = userId
     )
 

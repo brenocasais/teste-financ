@@ -5,6 +5,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -872,7 +873,13 @@ fun CategoryFormDialog(
     onSave: (Category, String?) -> Unit
 ) {
     var name by remember { mutableStateOf(category?.name ?: "") }
+    var icon by remember { mutableStateOf(category?.icon ?: "") }
+    var budgetRuleType by remember { mutableStateOf<String?>(category?.budget_rule_type) }
     var subcategoryName by remember { mutableStateOf("") }
+
+    val commonEmojis = remember {
+        listOf("🏦", "💳", "🛒", "🍔", "🛵", "📺", "🎬", "🎮", "🚗", "⛽", "🏠", "💡", "📱", "✈️", "🎓", "💰", "💵", "🏥", "📈", "🧾", "🎁", "🏋️", "🐾", "👔")
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -881,7 +888,9 @@ fun CategoryFormDialog(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
@@ -897,6 +906,58 @@ fun CategoryFormDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Emoji Icon Selector
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Ícone (Emoji)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = icon,
+                        onValueChange = { icon = it },
+                        label = { Text("Emoji da categoria") },
+                        placeholder = { Text("Ex: 🍽️") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                    ) {
+                        commonEmojis.forEach { em ->
+                            FilterChip(
+                                selected = icon == em,
+                                onClick = { icon = em },
+                                label = { Text(em, fontSize = 16.sp) }
+                            )
+                        }
+                    }
+                }
+
+                // 50/30/20 Budget Rule Type Selector
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Regra de Orçamento (50/30/20)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                    ) {
+                        val rules = listOf(
+                            null to "Padrão",
+                            "NECESSIDADE" to "Necessidade",
+                            "DESEJO" to "Desejo",
+                            "POUPANCA" to "Poupança"
+                        )
+                        rules.forEach { (type, label) ->
+                            FilterChip(
+                                selected = budgetRuleType == type,
+                                onClick = { budgetRuleType = type },
+                                label = { Text(label, fontSize = 11.5.sp) }
+                            )
+                        }
+                    }
+                }
 
                 if (category == null) {
                     OutlinedTextField(
@@ -916,8 +977,16 @@ fun CategoryFormDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val targetCat = category?.copy(name = name)
-                                ?: Category(name = name)
+                            val iconVal = icon.trim().ifEmpty { null }
+                            val targetCat = category?.copy(
+                                name = name,
+                                icon = iconVal,
+                                budget_rule_type = budgetRuleType
+                            ) ?: Category(
+                                name = name,
+                                icon = iconVal,
+                                budget_rule_type = budgetRuleType
+                            )
                             onSave(targetCat, subcategoryName)
                         },
                         enabled = name.isNotBlank()
@@ -938,7 +1007,12 @@ fun SubcategoryFormDialog(
     onSave: (Subcategory) -> Unit
 ) {
     var name by remember { mutableStateOf(subcategory?.name ?: "") }
+    var icon by remember { mutableStateOf(subcategory?.icon ?: "") }
     var selectedCatId by remember { mutableStateOf(subcategory?.category_id ?: categories.firstOrNull()?.id ?: 0) }
+
+    val commonEmojis = remember {
+        listOf("🏦", "💳", "🛒", "🍔", "🛵", "📺", "🎬", "🎮", "🚗", "⛽", "🏠", "💡", "📱", "✈️", "🎓", "💰", "💵", "🏥", "📈", "🧾", "🎁", "🏋️", "🐾", "👔")
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -947,7 +1021,9 @@ fun SubcategoryFormDialog(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
@@ -964,6 +1040,33 @@ fun SubcategoryFormDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Emoji Icon Selector
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Ícone (Emoji)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = icon,
+                        onValueChange = { icon = it },
+                        label = { Text("Emoji da subcategoria") },
+                        placeholder = { Text("Ex: 🍔") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                    ) {
+                        commonEmojis.forEach { em ->
+                            FilterChip(
+                                selected = icon == em,
+                                onClick = { icon = em },
+                                label = { Text(em, fontSize = 16.sp) }
+                            )
+                        }
+                    }
+                }
+
                 Text("Categoria Pai", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Column {
                     categories.forEach { cat ->
@@ -977,7 +1080,7 @@ fun SubcategoryFormDialog(
                         ) {
                             RadioButton(selected = selectedCatId == cat.id, onClick = { selectedCatId = cat.id })
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(cat.name, fontSize = 13.sp)
+                            Text("${cat.icon ?: ""} ${cat.name}".trim(), fontSize = 13.sp)
                         }
                     }
                 }
@@ -990,8 +1093,9 @@ fun SubcategoryFormDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val targetSub = subcategory?.copy(name = name, category_id = selectedCatId)
-                                ?: Subcategory(name = name, category_id = selectedCatId)
+                            val iconVal = icon.trim().ifEmpty { null }
+                            val targetSub = subcategory?.copy(name = name, category_id = selectedCatId, icon = iconVal)
+                                ?: Subcategory(name = name, category_id = selectedCatId, icon = iconVal)
                             onSave(targetSub)
                         },
                         enabled = name.isNotBlank() && selectedCatId != 0
@@ -1906,7 +2010,19 @@ fun CategoriesCrudDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(cat.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Column(modifier = Modifier.weight(1f)) {
+                                val displayName = if (!cat.icon.isNullOrBlank()) "${cat.icon} ${cat.name}" else cat.name
+                                Text(displayName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                if (!cat.budget_rule_type.isNullOrBlank()) {
+                                    val ruleLabel = when(cat.budget_rule_type) {
+                                        "NECESSIDADE" -> "Necessidade (50%)"
+                                        "DESEJO" -> "Desejo (30%)"
+                                        "POUPANCA" -> "Poupança (20%)"
+                                        else -> cat.budget_rule_type
+                                    }
+                                    Text(ruleLabel, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                                }
+                            }
                             Row {
                                 IconButton(onClick = { onEditCategory(cat) }) {
                                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -1949,7 +2065,8 @@ fun CategoriesCrudDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(sub.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                val subDisplayName = if (!sub.icon.isNullOrBlank()) "${sub.icon} ${sub.name}" else sub.name
+                                Text(subDisplayName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                                 Text("Categoria: $catName", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                             }
                             Row {

@@ -46,7 +46,6 @@ import com.example.data.model.Account
 import com.example.data.model.AllocationMovement
 import com.example.data.model.BudgetAllocation
 import com.example.data.model.Category
-import com.example.data.model.EnvelopeGroup
 import com.example.data.model.Subcategory
 import com.example.data.model.Transaction
 import com.example.data.model.Goal
@@ -2161,12 +2160,20 @@ fun CategoryRowItem(
                     .background(iconBgColor),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = getCategoryIcon(category.name),
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(13.dp)
-                )
+                if (!category.icon.isNullOrBlank()) {
+                    Text(
+                        text = category.icon,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Icon(
+                        imageVector = getCategoryIcon(category.name),
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))
@@ -2351,12 +2358,20 @@ fun SubcategoryRowItem(
                         .background(iconBgColor),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = getCategoryIcon(subcategory.name),
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(11.dp)
-                    )
+                    if (!subcategory.icon.isNullOrBlank()) {
+                        Text(
+                            text = subcategory.icon,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        Icon(
+                            imageVector = getCategoryIcon(subcategory.name),
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(5.dp))

@@ -2738,7 +2738,6 @@ fun TransactionAddEditDialog(
                             return@Button
                         }
                         val cat = Category(
-                            envelope_group_id = null,
                             name = newCatName.trim(),
                             userId = viewModel.currentUserId
                         )
@@ -2749,7 +2748,7 @@ fun TransactionAddEditDialog(
                                 userId = viewModel.currentUserId
                             )
                             viewModel.insertSubcategory(sub) { newSubId ->
-                                val createdCat = Category(id = newId, envelope_group_id = null, name = newCatName.trim(), userId = viewModel.currentUserId)
+                                val createdCat = Category(id = newId, name = newCatName.trim(), userId = viewModel.currentUserId)
                                 val createdSub = Subcategory(id = newSubId, category_id = newId, name = newSubName.trim(), userId = viewModel.currentUserId)
                                 selectedCategory = createdCat
                                 selectedSubcategory = createdSub

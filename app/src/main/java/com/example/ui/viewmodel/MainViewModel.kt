@@ -331,27 +331,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             root.put("accounts", accountsArr)
 
-            // Envelope Groups
-            val groupsArr = org.json.JSONArray()
-            repository.getAllEnvelopeGroups(userId).forEach {
-                val obj = org.json.JSONObject()
-                obj.put("id", it.id)
-                obj.put("name", it.name)
-                obj.put("sort_order", it.sort_order)
-                obj.put("budget_rule_type", it.budget_rule_type ?: org.json.JSONObject.NULL)
-                obj.put("archived", it.archived)
-                groupsArr.put(obj)
-            }
-            root.put("envelope_groups", groupsArr)
-
             // Categories
             val categoriesArr = org.json.JSONArray()
             repository.getAllCategories(userId).forEach {
                 val obj = org.json.JSONObject()
                 obj.put("id", it.id)
-                obj.put("envelope_group_id", it.envelope_group_id ?: org.json.JSONObject.NULL)
                 obj.put("name", it.name)
                 obj.put("archived", it.archived)
+                obj.put("icon", it.icon ?: org.json.JSONObject.NULL)
+                obj.put("budget_rule_type", it.budget_rule_type ?: org.json.JSONObject.NULL)
                 categoriesArr.put(obj)
             }
             root.put("categories", categoriesArr)
@@ -364,6 +352,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 obj.put("category_id", it.category_id)
                 obj.put("name", it.name)
                 obj.put("archived", it.archived)
+                obj.put("icon", it.icon ?: org.json.JSONObject.NULL)
                 subcategoriesArr.put(obj)
             }
             root.put("subcategories", subcategoriesArr)
@@ -471,6 +460,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 obj.put("deadline", it.deadline)
                 obj.put("color", it.color)
                 obj.put("archived", it.archived)
+                obj.put("is_paused", it.is_paused)
                 goalsArr.put(obj)
             }
             root.put("goals", goalsArr)

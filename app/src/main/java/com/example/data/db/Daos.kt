@@ -3,7 +3,6 @@ package com.example.data.db
 import androidx.room.*
 import com.example.data.model.Account
 import com.example.data.model.Category
-import com.example.data.model.EnvelopeGroup
 import com.example.data.model.Subcategory
 import com.example.data.model.Transaction
 import com.example.data.model.BudgetAllocation
@@ -38,30 +37,6 @@ interface AccountDao {
     suspend fun delete(account: Account)
 
     @Query("DELETE FROM accounts WHERE userId = :userId")
-    suspend fun clearAll(userId: String)
-}
-
-@Dao
-interface EnvelopeGroupDao {
-    @Query("SELECT * FROM envelope_groups WHERE userId = :userId ORDER BY sort_order ASC, name ASC")
-    fun getEnvelopeGroupsFlow(userId: String): Flow<List<EnvelopeGroup>>
-
-    @Query("SELECT * FROM envelope_groups WHERE userId = :userId")
-    suspend fun getAllEnvelopeGroups(userId: String): List<EnvelopeGroup>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(envelopeGroup: EnvelopeGroup): Long
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(groups: List<EnvelopeGroup>)
-
-    @Update
-    suspend fun update(envelopeGroup: EnvelopeGroup)
-
-    @Delete
-    suspend fun delete(envelopeGroup: EnvelopeGroup)
-
-    @Query("DELETE FROM envelope_groups WHERE userId = :userId")
     suspend fun clearAll(userId: String)
 }
 

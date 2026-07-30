@@ -22,6 +22,7 @@ class UserPreferences(private val context: Context) {
         private val NOTIFY_INSTALLMENT_KEY = booleanPreferencesKey("notify_installment")
         private val NOTIFY_GOAL_KEY = booleanPreferencesKey("notify_goal")
         private val NOTIFY_WEEKLY_REVIEW_KEY = booleanPreferencesKey("notify_weekly_review")
+        private val NOTIFY_SYNC_FAILURE_KEY = booleanPreferencesKey("notify_sync_failure")
         private val CREDIT_CARD_DAYS_BEFORE_KEY = intPreferencesKey("credit_card_days_before")
         private val WEEKLY_REVIEW_DAY_KEY = intPreferencesKey("weekly_review_day") // 1 = Sunday, 2 = Monday, ..., 7 = Saturday
         private val WEEKLY_REVIEW_TIME_KEY = stringPreferencesKey("weekly_review_time") // HH:mm
@@ -46,6 +47,10 @@ class UserPreferences(private val context: Context) {
 
     val notifyWeeklyReviewFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[NOTIFY_WEEKLY_REVIEW_KEY] ?: true
+    }
+
+    val notifySyncFailureFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[NOTIFY_SYNC_FAILURE_KEY] ?: true
     }
 
     val creditCardDaysBeforeFlow: Flow<Int> = context.dataStore.data.map { preferences ->
@@ -78,6 +83,10 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setNotifyWeeklyReview(enabled: Boolean) {
         context.dataStore.edit { preferences -> preferences[NOTIFY_WEEKLY_REVIEW_KEY] = enabled }
+    }
+
+    suspend fun setNotifySyncFailure(enabled: Boolean) {
+        context.dataStore.edit { preferences -> preferences[NOTIFY_SYNC_FAILURE_KEY] = enabled }
     }
 
     suspend fun setCreditCardDaysBefore(days: Int) {

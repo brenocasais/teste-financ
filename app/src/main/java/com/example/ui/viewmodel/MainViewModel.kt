@@ -509,6 +509,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearAllUserData(onComplete: () -> Unit = {}) {
+        val userId = currentUserId
+        viewModelScope.launch {
+            if (userId.isNotBlank()) {
+                repository.clearAllUserData(userId)
+            }
+            onComplete()
+        }
+    }
+
     // --- TRANSACTION ACTIONS ---
     // --- Navigation routing / highlighting / history dialog states ---
     private val _navigateToTab = MutableSharedFlow<Int>()

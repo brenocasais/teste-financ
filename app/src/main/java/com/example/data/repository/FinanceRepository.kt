@@ -469,6 +469,18 @@ class FinanceRepository(
     suspend fun updateSubcategory(subcategory: Subcategory) = subcategoryDao.update(subcategory)
     suspend fun deleteSubcategory(subcategory: Subcategory) = subcategoryDao.delete(subcategory)
 
+    suspend fun clearAllUserData(userId: String) {
+        getAllTransactions(userId).forEach { deleteTransaction(it) }
+        getAllAccounts(userId).forEach { deleteAccount(it) }
+        getAllCategories(userId).forEach { deleteCategory(it) }
+        getAllSubcategories(userId).forEach { deleteSubcategory(it) }
+        getAllGoals(userId).forEach { deleteGoal(it) }
+        getAllRecurrenceRules(userId).forEach { deleteRecurrenceRule(it) }
+        getAllInstallmentPlans(userId).forEach { deleteInstallmentPlan(it) }
+        getAllBudgetAllocations(userId).forEach { deleteBudgetAllocation(it) }
+        getAllAllocationMovements(userId).forEach { deleteAllocationMovement(it) }
+    }
+
     // --- FIRESTORE SYNC ---
     private val firestore = FirebaseFirestore.getInstance()
 

@@ -2,10 +2,13 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -612,242 +615,316 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) Color(0xFF0D1214) else Color(0xFFFAFAFB)
+    val cardBgColor = if (isDark) Color(0xFF172021) else Color(0xFFFFFFFF)
+    val borderColor = if (isDark) Color(0xFF263233) else Color(0xFFECEFF1)
+    val primaryTextColor = if (isDark) Color(0xFFF5F7F7) else Color(0xFF111827)
+    val secondaryTextColor = if (isDark) Color(0xFFA9B1B1) else Color(0xFF6B7280)
+    val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+
     // --- MAIN SCREEN CONTENT ---
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(bgColor)
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 12.dp)
     ) {
-        // Title heading
+        // Title heading with compact period selector
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column {
-                    Text(
-                        "Análise Financeira 📊",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        "Gráficos, projeções e inteligência de envelopes",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
-                }
-            }
-        }
+                Text(
+                    text = "Métricas",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
+                )
 
-        // Period Comparison Selector
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        "Período de Análise",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf("MÊS", "TRIMESTRE", "ANO", "CUSTOMIZADO").forEach { pType ->
-                            val isSelected = selectedPeriodType == pType
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedPeriodType = pType },
-                                label = { Text(pType, fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    if (selectedPeriodType == "CUSTOMIZADO") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Start month field
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { showStartPicker = true }
-                            ) {
-                                OutlinedTextField(
-                                    value = displaySdf.format(customStartCal.time).replaceFirstChar { it.uppercase() },
-                                    onValueChange = {},
-                                    enabled = false,
-                                    label = { Text("Mês Inicial") },
-                                    shape = RoundedCornerShape(10.dp),
-                                    textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                    trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                                )
-                            }
-                            
-                            Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-
-                            // End month field
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { showEndPicker = true }
-                            ) {
-                                OutlinedTextField(
-                                    value = displaySdf.format(customEndCal.time).replaceFirstChar { it.uppercase() },
-                                    onValueChange = {},
-                                    enabled = false,
-                                    label = { Text("Mês Final") },
-                                    shape = RoundedCornerShape(10.dp),
-                                    textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                    trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                                )
-                            }
-                        }
-                    } else {
-                        // Display resolved date interval label
-                        Text(
-                            text = "De: ${formatMonthPortuguese(startMonthStr)} até ${formatMonthPortuguese(endMonthStr)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
-
-        // Financial KPI Cards (Revenue vs Expense comparison)
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Receipts card
-                Card(
-                    modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.ArrowCircleUp, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(18.dp))
-                            Text("Receitas", style = MaterialTheme.typography.labelMedium)
-                        }
-                        Text(
-                            currencyFormatter.format(totalRevenue),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (revenueDeltaPercent >= 0) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
-                                contentDescription = null,
-                                tint = if (revenueDeltaPercent >= 0) Color(0xFF2E7D32) else Color(0xFFC62828),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "${if (revenueDeltaPercent >= 0) "+" else ""}$revenueDeltaPercent% vs ant.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (revenueDeltaPercent >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
-                            )
-                        }
+                // Compact period selector with left/right arrows
+                val periodDisplayText = remember(selectedPeriodType, selectedMonthCalendar, customStartCal, customEndCal) {
+                    when (selectedPeriodType) {
+                        "MÊS" -> displaySdf.format(selectedMonthCalendar.time).replaceFirstChar { it.uppercase() }
+                        else -> "${formatMonthPortuguese(startMonthStr)} - ${formatMonthPortuguese(endMonthStr)}"
                     }
                 }
 
-                // Expenses card
-                Card(
-                    modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.ArrowCircleDown, contentDescription = null, tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
-                            Text("Despesas", style = MaterialTheme.typography.labelMedium)
-                        }
-                        Text(
-                            currencyFormatter.format(totalExpense),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (expenseDeltaPercent <= 0) Icons.Default.TrendingDown else Icons.Default.TrendingUp,
-                                contentDescription = null,
-                                tint = if (expenseDeltaPercent <= 0) Color(0xFF2E7D32) else Color(0xFFC62828),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "${if (expenseDeltaPercent >= 0) "+" else ""}$expenseDeltaPercent% vs ant.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (expenseDeltaPercent <= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Total Net Savings Progress Card
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true),
-                shape = RoundedCornerShape(12.dp)
-            ) {
                 Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .background(cardBgColor, RoundedCornerShape(20.dp))
+                        .border(1.dp, borderColor, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
-                    Column {
-                        Text("Saldo Líquido no Período", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            text = currencyFormatter.format(netSavings),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Black,
-                            color = if (netSavings >= 0.0) Color(0xFF2E7D32) else Color(0xFFC62828)
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(
-                                color = if (netSavings >= 0.0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
+                    IconButton(
+                        onClick = {
+                            when (selectedPeriodType) {
+                                "MÊS" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, -1) })
+                                "TRIMESTRE" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, -3) })
+                                "ANO" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.YEAR, -1) })
+                                "CUSTOMIZADO" -> {
+                                    customStartCal = (customStartCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+                                    customEndCal = (customEndCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
-                            imageVector = if (netSavings >= 0.0) Icons.Default.Savings else Icons.Default.TrendingDown,
-                            contentDescription = null,
-                            tint = if (netSavings >= 0.0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                            imageVector = Icons.Default.ChevronLeft,
+                            contentDescription = "Anterior",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(18.dp)
                         )
+                    }
+
+                    Text(
+                        text = periodDisplayText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primaryTextColor,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            when (selectedPeriodType) {
+                                "MÊS" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, 1) })
+                                "TRIMESTRE" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, 3) })
+                                "ANO" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.YEAR, 1) })
+                                "CUSTOMIZADO" -> {
+                                    customStartCal = (customStartCal.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+                                    customEndCal = (customEndCal.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Próximo",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Period Chips
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val periods = listOf(
+                    "Mês" to "MÊS",
+                    "Trimestre" to "TRIMESTRE",
+                    "Ano" to "ANO",
+                    "Personalizado" to "CUSTOMIZADO"
+                )
+                periods.forEach { (label, key) ->
+                    val isSelected = selectedPeriodType == key
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                if (isSelected) greenColor.copy(alpha = 0.15f)
+                                else cardBgColor
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isSelected) greenColor else borderColor,
+                                shape = RoundedCornerShape(18.dp)
+                            )
+                            .clickable { selectedPeriodType = key },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) greenColor else secondaryTextColor,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+
+            if (selectedPeriodType == "CUSTOMIZADO") {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { showStartPicker = true }
+                    ) {
+                        OutlinedTextField(
+                            value = displaySdf.format(customStartCal.time).replaceFirstChar { it.uppercase() },
+                            onValueChange = {},
+                            enabled = false,
+                            label = { Text("Mês Inicial") },
+                            shape = RoundedCornerShape(10.dp),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                    }
+                    
+                    Icon(Icons.Default.ArrowForward, contentDescription = null, tint = greenColor, modifier = Modifier.size(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { showEndPicker = true }
+                    ) {
+                        OutlinedTextField(
+                            value = displaySdf.format(customEndCal.time).replaceFirstChar { it.uppercase() },
+                            onValueChange = {},
+                            enabled = false,
+                            label = { Text("Mês Final") },
+                            shape = RoundedCornerShape(10.dp),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Period Summary Card (Receitas, Despesas, Saldo, Economia %)
+        item {
+            val savingsPct = if (totalRevenue > 0) ((netSavings / totalRevenue) * 100) else null
+            val savingsPctText = if (savingsPct != null) String.format(Locale("pt", "BR"), "%.1f%%", savingsPct) else "—"
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Resumo do Período",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Receitas
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(greenColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .border(1.dp, greenColor.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Receitas", fontSize = 11.sp, color = secondaryTextColor, fontWeight = FontWeight.Medium)
+                                Text(
+                                    currencyFormatter.format(totalRevenue),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = greenColor
+                                )
+                                Text(
+                                    text = "${if (revenueDeltaPercent >= 0) "+" else ""}$revenueDeltaPercent% vs ant.",
+                                    fontSize = 10.sp,
+                                    color = if (revenueDeltaPercent >= 0) greenColor else redColor
+                                )
+                            }
+                        }
+
+                        // Despesas
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(redColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .border(1.dp, redColor.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Despesas", fontSize = 11.sp, color = secondaryTextColor, fontWeight = FontWeight.Medium)
+                                Text(
+                                    currencyFormatter.format(totalExpense),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = redColor
+                                )
+                                Text(
+                                    text = "${if (expenseDeltaPercent >= 0) "+" else ""}$expenseDeltaPercent% vs ant.",
+                                    fontSize = 10.sp,
+                                    color = if (expenseDeltaPercent <= 0) greenColor else redColor
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Saldo
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(if (netSavings >= 0) greenColor.copy(alpha = 0.08f) else redColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .border(1.dp, if (netSavings >= 0) greenColor.copy(alpha = 0.2f) else redColor.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Saldo Líquido", fontSize = 11.sp, color = secondaryTextColor, fontWeight = FontWeight.Medium)
+                                Text(
+                                    currencyFormatter.format(netSavings),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (netSavings >= 0) greenColor else redColor
+                                )
+                            }
+                        }
+
+                        // Economia %
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(if ((savingsPct ?: 0.0) >= 0) greenColor.copy(alpha = 0.08f) else redColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .border(1.dp, if ((savingsPct ?: 0.0) >= 0) greenColor.copy(alpha = 0.2f) else redColor.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Economia %", fontSize = 11.sp, color = secondaryTextColor, fontWeight = FontWeight.Medium)
+                                Text(
+                                    savingsPctText,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if ((savingsPct ?: 0.0) >= 0) greenColor else redColor
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -857,11 +934,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
@@ -969,11 +1047,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Column {
@@ -1071,11 +1150,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
@@ -1104,11 +1184,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
@@ -1129,11 +1210,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
@@ -1191,11 +1273,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
@@ -1245,11 +1328,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
@@ -1296,11 +1380,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
@@ -1387,11 +1472,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
@@ -1463,11 +1549,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
@@ -1547,11 +1634,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
@@ -1647,11 +1735,12 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(enabled = true)
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(

@@ -1,13 +1,19 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,10 +22,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,15 +36,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.auth.AuthManager
 import com.example.data.model.Account
 import com.example.data.model.Category
+import com.example.data.model.RecurrenceRule
 import com.example.data.model.Subcategory
 import com.example.ui.viewmodel.MainViewModel
+import com.example.utils.ExportHelper
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.Calendar
 
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val userId = viewModel.currentUserId
 
@@ -44,125 +57,463 @@ fun SettingsScreen(
     val accounts by viewModel.repository.getAccountsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
     val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val recurrenceRules by viewModel.repository.getRecurrenceRulesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val transactions by viewModel.repository.getTransactionsFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
 
     // UI States
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
+    val hideValues by viewModel.hideValues.collectAsStateWithLifecycle()
+    val securityEnabled by viewModel.securityEnabled.collectAsStateWithLifecycle()
+    val authMethod by viewModel.authMethod.collectAsStateWithLifecycle()
 
-    // Dialog Control States
+    // App Version
+    val versionName = remember(context) {
+        try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            "v${packageInfo.versionName ?: "1.0.0"}"
+        } catch (e: Exception) {
+            "v1.0.0"
+        }
+    }
+
+    // Color System (Redesign Tokens Section 0.1)
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) Color(0xFF0D1315) else Color(0xFFFAFAFB)
+    val cardBgColor = if (isDark) Color(0xFF172021) else Color(0xFFFFFFFF)
+    val borderColor = if (isDark) Color(0xFF263233) else Color(0xFFECEFF1)
+    val primaryTextColor = if (isDark) Color(0xFFF5F7F7) else Color(0xFF111827)
+    val secondaryTextColor = if (isDark) Color(0xFFA9B1B1) else Color(0xFF6B7280)
+    val greenColor = if (isDark) Color(0xFF39D47A) else Color(0xFF22A45D)
+    val redColor = if (isDark) Color(0xFFFF4D55) else Color(0xFFEF4444)
+
+    // Active Dialog Control
     var activeDialog by remember { mutableStateOf<SettingsDialog?>(null) }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(bgColor)
+            .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // 11.1 PROFILE CARD
+        // --- CABEÇALHO ---
         item {
-            ProfileCard(
-                authState = authState,
-                onLogoutClick = {
-                    viewModel.logout { }
-                }
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Ajustes",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
+                )
+                Text(
+                    text = "Gerencie sua conta e preferências",
+                    fontSize = 13.sp,
+                    color = secondaryTextColor
+                )
+            }
         }
 
-        // 11.2 THEME / APPEARANCE
+        // --- CARD DE PERFIL ---
         item {
-            AppearanceCard(
-                currentTheme = themeMode,
-                onThemeSelected = { viewModel.setThemeMode(it) }
-            )
-        }
+            val currentAuth = authState
+            val emailText = when (currentAuth) {
+                is AuthManager.AuthState.Authenticated -> currentAuth.user.email ?: "Autenticado via Google"
+                is AuthManager.AuthState.Guest -> "Modo Convidado (Local)"
+                else -> "Não autenticado"
+            }
+            val nameText = when (currentAuth) {
+                is AuthManager.AuthState.Authenticated -> currentAuth.user.displayName ?: currentAuth.user.email?.substringBefore("@") ?: "Usuário"
+                is AuthManager.AuthState.Guest -> "Convidado"
+                else -> "Visitante"
+            }
+            val initials = nameText.take(2).uppercase()
 
-        // 11.3 ACCOUNTS CRUD
-        item {
-            AccountsCrudCard(
-                accounts = accounts,
-                onAddAccount = { activeDialog = SettingsDialog.AddAccount },
-                onEditAccount = { activeDialog = SettingsDialog.EditAccount(it) },
-                onDeleteAccount = {
-                    scope.launch {
-                        viewModel.repository.deleteAccount(it)
-                        viewModel.triggerPush()
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { activeDialog = SettingsDialog.EditProfile },
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(greenColor.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = initials,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = greenColor
+                            )
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = nameText,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor
+                            )
+                            Text(
+                                text = emailText,
+                                fontSize = 13.sp,
+                                color = secondaryTextColor
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { activeDialog = SettingsDialog.EditProfile },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Editar Perfil",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
-            )
+            }
         }
 
-        // 11.5 CATEGORIES & SUBCATEGORIES CRUD
+        // --- SEÇÃO PREFERÊNCIAS ---
         item {
-            CategoriesCrudCard(
-                categories = categories,
-                subcategories = subcategories,
-                onAddCategory = { activeDialog = SettingsDialog.AddCategory },
-                onEditCategory = { activeDialog = SettingsDialog.EditCategory(it) },
-                onDeleteCategory = {
-                    scope.launch {
-                        viewModel.repository.deleteCategory(it)
-                        viewModel.triggerPush()
+            SectionHeader("PREFERÊNCIAS", secondaryTextColor)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column {
+                    val themeSubtitle = when (themeMode) {
+                        "LIGHT" -> "Claro"
+                        "DARK" -> "Escuro"
+                        else -> "Seguir Sistema"
                     }
-                },
-                onAddSubcategory = { activeDialog = SettingsDialog.AddSubcategory },
-                onEditSubcategory = { activeDialog = SettingsDialog.EditSubcategory(it) },
-                onDeleteSubcategory = {
-                    scope.launch {
-                        viewModel.repository.deleteSubcategory(it)
-                        viewModel.triggerPush()
-                    }
+                    SettingsItemRow(
+                        icon = Icons.Default.Palette,
+                        title = "Aparência",
+                        subtitle = themeSubtitle,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.Appearance }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.Notifications,
+                        title = "Notificações",
+                        subtitle = "Alertas e preferências de aviso",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.Notifications }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.Language,
+                        title = "Idioma",
+                        subtitle = "Português (Brasil)",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.AttachMoney,
+                        title = "Moeda padrão",
+                        subtitle = "Real (R$)",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { }
+                    )
                 }
-            )
+            }
         }
 
-        // 11.6 NOTIFICATIONS SETTINGS
+        // --- SEÇÃO FINANÇAS E ORGANIZAÇÃO ---
         item {
-            NotificationsCard(
-                viewModel = viewModel
-            )
+            SectionHeader("FINANÇAS E ORGANIZAÇÃO", secondaryTextColor)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column {
+                    SettingsItemRow(
+                        icon = Icons.Default.AccountBalance,
+                        title = "Contas e cartões",
+                        subtitle = "${accounts.size} cadastradas",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.AccountsCrud }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.Category,
+                        title = "Categorias e subcategorias",
+                        subtitle = "${categories.size} categorias | ${subcategories.size} subcategorias",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.CategoriesCrud }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    val activeRecurrenceRules = recurrenceRules.filter { it.active }
+                    SettingsItemRow(
+                        icon = Icons.Default.Repeat,
+                        title = "Transações recorrentes",
+                        subtitle = "${activeRecurrenceRules.size} regras ativas",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.RecurrenceRules }
+                    )
+                }
+            }
         }
 
-        // 11.9 SYNC SETTINGS
+        // --- SEÇÃO DADOS E BACKUP ---
         item {
-            SyncSettingsCard(
-                viewModel = viewModel,
-                syncState = syncState,
-                syncLogs = syncLogs
-            )
+            SectionHeader("DADOS E BACKUP", secondaryTextColor)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column {
+                    SettingsItemRow(
+                        icon = Icons.Default.Sync,
+                        title = "Backup e sincronização",
+                        subtitle = "Sincronização cloud e auditoria",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.SyncSettings }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.Share,
+                        title = "Exportar dados",
+                        subtitle = "JSON, CSV, XLSX e PDF",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.ExportData }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.DeleteForever,
+                        title = "Limpar dados",
+                        subtitle = "Ação destrutiva - apaga todos os dados locais",
+                        primaryTextColor = redColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = redColor,
+                        onClick = { activeDialog = SettingsDialog.ClearData }
+                    )
+                }
+            }
         }
 
-        // 11.10 BACKUP E EXPORTAÇÃO
+        // --- SEÇÃO SEGURANÇA ---
         item {
-            BackupSettingsCard(
-                viewModel = viewModel
-            )
+            SectionHeader("SEGURANÇA", secondaryTextColor)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column {
+                    val secSubtitle = if (securityEnabled) "Proteção ativa (${if (authMethod == "BIOMETRIC") "Biometria" else "PIN"})" else "Proteção desativada"
+                    SettingsItemRow(
+                        icon = Icons.Default.Security,
+                        title = "Proteger com senha/biometria",
+                        subtitle = secSubtitle,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.SecuritySettings }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.Visibility,
+                        title = "Ocultar valores",
+                        subtitle = "Oculta saldos e quantias na tela inicial",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = {
+                            scope.launch { viewModel.userPreferences.setHideValues(!hideValues) }
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = hideValues,
+                                onCheckedChange = { scope.launch { viewModel.userPreferences.setHideValues(it) } },
+                                modifier = Modifier.testTag("toggle_hide_values")
+                            )
+                        }
+                    )
+                }
+            }
         }
 
-        // 11.11 SEGURANÇA E BIOMETRIA
+        // --- SEÇÃO SOBRE ---
         item {
-            SecuritySettingsCard(
-                viewModel = viewModel
-            )
+            SectionHeader("SOBRE", secondaryTextColor)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, borderColor),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column {
+                    SettingsItemRow(
+                        icon = Icons.Default.Info,
+                        title = "Sobre o app",
+                        subtitle = "Versão $versionName",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { }
+                    )
+                    HorizontalDivider(color = borderColor)
+                    SettingsItemRow(
+                        icon = Icons.Default.HelpOutline,
+                        title = "Central de ajuda",
+                        subtitle = "Perguntas frequentes e suporte",
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        iconTint = greenColor,
+                        onClick = { activeDialog = SettingsDialog.HelpCenter }
+                    )
+                }
+            }
         }
 
+        // --- SAIR DA CONTA ---
         item {
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, redColor.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                SettingsItemRow(
+                    icon = Icons.Default.Logout,
+                    title = "Sair da conta",
+                    subtitle = "Encerrar sessão no aplicativo",
+                    primaryTextColor = redColor,
+                    secondaryTextColor = secondaryTextColor,
+                    iconTint = redColor,
+                    onClick = { activeDialog = SettingsDialog.LogoutConfirmation }
+                )
+            }
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
 
-    // Handle Active Dialogs
+    // --- MANUSEIO DOS DIÁLOGOS ATIVOS ---
     when (val dialog = activeDialog) {
+        SettingsDialog.EditProfile -> {
+            EditProfileDialog(
+                authState = authState,
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.Appearance -> {
+            AppearanceDialog(
+                currentTheme = themeMode,
+                onThemeSelected = {
+                    viewModel.setThemeMode(it)
+                    activeDialog = null
+                },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.Notifications -> {
+            NotificationsDialog(
+                viewModel = viewModel,
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.RecurrenceRules -> {
+            RecurrenceRulesDialog(
+                rules = recurrenceRules,
+                categories = categories,
+                viewModel = viewModel,
+                onDismiss = { activeDialog = null },
+                onEditRule = { rule -> activeDialog = SettingsDialog.EditRecurrenceRule(rule) }
+            )
+        }
+        is SettingsDialog.EditRecurrenceRule -> {
+            EditRecurrenceRuleDialog(
+                rule = dialog.rule,
+                categories = categories,
+                onDismiss = { activeDialog = SettingsDialog.RecurrenceRules },
+                onSave = { updatedRule ->
+                    scope.launch {
+                        viewModel.repository.updateRecurrenceRule(updatedRule)
+                        activeDialog = SettingsDialog.RecurrenceRules
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        SettingsDialog.AccountsCrud -> {
+            AccountsCrudDialog(
+                accounts = accounts,
+                onDismiss = { activeDialog = null },
+                onAddAccount = { activeDialog = SettingsDialog.AddAccount },
+                onEditAccount = { acc -> activeDialog = SettingsDialog.EditAccount(acc) },
+                onDeleteAccount = { acc ->
+                    scope.launch {
+                        viewModel.repository.deleteAccount(acc)
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
         SettingsDialog.AddAccount -> {
             AccountFormDialog(
                 account = null,
-                onDismiss = { activeDialog = null },
+                onDismiss = { activeDialog = SettingsDialog.AccountsCrud },
                 onSave = { acc ->
                     scope.launch {
                         viewModel.repository.insertAccount(acc.copy(userId = userId))
-                        activeDialog = null
+                        activeDialog = SettingsDialog.AccountsCrud
                         viewModel.triggerPush()
                     }
                 }
@@ -171,11 +522,34 @@ fun SettingsScreen(
         is SettingsDialog.EditAccount -> {
             AccountFormDialog(
                 account = dialog.account,
-                onDismiss = { activeDialog = null },
+                onDismiss = { activeDialog = SettingsDialog.AccountsCrud },
                 onSave = { acc ->
                     scope.launch {
                         viewModel.repository.updateAccount(acc.copy(userId = userId))
-                        activeDialog = null
+                        activeDialog = SettingsDialog.AccountsCrud
+                        viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        SettingsDialog.CategoriesCrud -> {
+            CategoriesCrudDialog(
+                categories = categories,
+                subcategories = subcategories,
+                onDismiss = { activeDialog = null },
+                onAddCategory = { activeDialog = SettingsDialog.AddCategory },
+                onEditCategory = { cat -> activeDialog = SettingsDialog.EditCategory(cat) },
+                onDeleteCategory = { cat ->
+                    scope.launch {
+                        viewModel.repository.deleteCategory(cat)
+                        viewModel.triggerPush()
+                    }
+                },
+                onAddSubcategory = { activeDialog = SettingsDialog.AddSubcategory },
+                onEditSubcategory = { sub -> activeDialog = SettingsDialog.EditSubcategory(sub) },
+                onDeleteSubcategory = { sub ->
+                    scope.launch {
+                        viewModel.repository.deleteSubcategory(sub)
                         viewModel.triggerPush()
                     }
                 }
@@ -184,7 +558,7 @@ fun SettingsScreen(
         SettingsDialog.AddCategory -> {
             CategoryFormDialog(
                 category = null,
-                onDismiss = { activeDialog = null },
+                onDismiss = { activeDialog = SettingsDialog.CategoriesCrud },
                 onSave = { cat, subName ->
                     scope.launch {
                         val catId = viewModel.repository.insertCategory(cat.copy(userId = userId))
@@ -197,7 +571,7 @@ fun SettingsScreen(
                                 )
                             )
                         }
-                        activeDialog = null
+                        activeDialog = SettingsDialog.CategoriesCrud
                         viewModel.triggerPush()
                     }
                 }
@@ -206,11 +580,11 @@ fun SettingsScreen(
         is SettingsDialog.EditCategory -> {
             CategoryFormDialog(
                 category = dialog.category,
-                onDismiss = { activeDialog = null },
+                onDismiss = { activeDialog = SettingsDialog.CategoriesCrud },
                 onSave = { cat, _ ->
                     scope.launch {
                         viewModel.repository.updateCategory(cat.copy(userId = userId))
-                        activeDialog = null
+                        activeDialog = SettingsDialog.CategoriesCrud
                         viewModel.triggerPush()
                     }
                 }
@@ -220,11 +594,11 @@ fun SettingsScreen(
             SubcategoryFormDialog(
                 subcategory = null,
                 categories = categories,
-                onDismiss = { activeDialog = null },
+                onDismiss = { activeDialog = SettingsDialog.CategoriesCrud },
                 onSave = { sub ->
                     scope.launch {
                         viewModel.repository.insertSubcategory(sub.copy(userId = userId))
-                        activeDialog = null
+                        activeDialog = SettingsDialog.CategoriesCrud
                         viewModel.triggerPush()
                     }
                 }
@@ -234,13 +608,62 @@ fun SettingsScreen(
             SubcategoryFormDialog(
                 subcategory = dialog.subcategory,
                 categories = categories,
-                onDismiss = { activeDialog = null },
+                onDismiss = { activeDialog = SettingsDialog.CategoriesCrud },
                 onSave = { sub ->
                     scope.launch {
                         viewModel.repository.updateSubcategory(sub.copy(userId = userId))
-                        activeDialog = null
+                        activeDialog = SettingsDialog.CategoriesCrud
                         viewModel.triggerPush()
                     }
+                }
+            )
+        }
+        SettingsDialog.SyncSettings -> {
+            SyncSettingsDialog(
+                viewModel = viewModel,
+                syncState = syncState,
+                syncLogs = syncLogs,
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.ExportData -> {
+            ExportDataDialog(
+                viewModel = viewModel,
+                accounts = accounts,
+                transactions = transactions,
+                categories = categories,
+                subcategories = subcategories,
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.ClearData -> {
+            ClearDataDialog(
+                onDismiss = { activeDialog = null },
+                onConfirmClear = {
+                    viewModel.clearAllUserData {
+                        activeDialog = null
+                        Toast.makeText(context, "Dados apagados com sucesso.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+        }
+        SettingsDialog.SecuritySettings -> {
+            SecuritySettingsDialog(
+                viewModel = viewModel,
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.HelpCenter -> {
+            HelpCenterDialog(
+                onDismiss = { activeDialog = null }
+            )
+        }
+        SettingsDialog.LogoutConfirmation -> {
+            LogoutConfirmationDialog(
+                onDismiss = { activeDialog = null },
+                onConfirmLogout = {
+                    activeDialog = null
+                    viewModel.logout { }
                 }
             )
         }
@@ -250,6 +673,20 @@ fun SettingsScreen(
 
 // Sealed class to represent active configuration dialogs
 sealed class SettingsDialog {
+    object EditProfile : SettingsDialog()
+    object Appearance : SettingsDialog()
+    object Notifications : SettingsDialog()
+    object RecurrenceRules : SettingsDialog()
+    data class EditRecurrenceRule(val rule: RecurrenceRule) : SettingsDialog()
+    object AccountsCrud : SettingsDialog()
+    object CategoriesCrud : SettingsDialog()
+    object SyncSettings : SettingsDialog()
+    object ExportData : SettingsDialog()
+    object ClearData : SettingsDialog()
+    object SecuritySettings : SettingsDialog()
+    object HelpCenter : SettingsDialog()
+    object LogoutConfirmation : SettingsDialog()
+
     object AddAccount : SettingsDialog()
     data class EditAccount(val account: Account) : SettingsDialog()
     object AddCategory : SettingsDialog()
@@ -261,1185 +698,87 @@ sealed class SettingsDialog {
 // --- SUB-COMPONENTS ---
 
 @Composable
-fun ProfileCard(
-    authState: AuthManager.AuthState,
-    onLogoutClick: () -> Unit
+fun SectionHeader(title: String, color: Color) {
+    Text(
+        text = title,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = color,
+        modifier = Modifier.padding(top = 22.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+fun SettingsItemRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    iconTint: Color,
+    onClick: () -> Unit,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.weight(1f)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Perfil do Usuário", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
-                val email = when (authState) {
-                    is AuthManager.AuthState.Authenticated -> authState.user.email ?: "Autenticado via Google"
-                    is AuthManager.AuthState.Guest -> "Modo Convidado (Local)"
-                    else -> "Não autenticado"
-                }
-                Text(email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-            }
-            IconButton(
-                onClick = onLogoutClick,
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Icon(Icons.Default.Logout, contentDescription = "Sair")
-            }
-        }
-    }
-}
-
-@Composable
-fun AppearanceCard(
-    currentTheme: String,
-    onThemeSelected: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconTint.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Aparência e Tema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            text = when (currentTheme) {
-                                "LIGHT" -> "Claro"
-                                "DARK" -> "Escuro"
-                                else -> "Seguir Sistema"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
                 Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val options = listOf("SYSTEM" to "Seguir Sistema", "LIGHT" to "Tema Claro", "DARK" to "Tema Escuro")
-                    options.forEach { (mode, label) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (currentTheme == mode) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onThemeSelected(mode) }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = currentTheme == mode,
-                                onClick = { onThemeSelected(mode) }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AccountsCrudCard(
-    accounts: List<Account>,
-    onAddAccount: () -> Unit,
-    onEditAccount: (Account) -> Unit,
-    onDeleteAccount: (Account) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountBalance, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Contas e Cartões", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("${accounts.size} cadastradas", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    }
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = onAddAccount,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Adicionar Nova Conta")
-                    }
-
-                    if (accounts.isEmpty()) {
-                        Text(
-                            text = "Nenhuma conta cadastrada.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            textAlign = TextAlign.Center
-                        )
-                    } else {
-                        accounts.forEach { acc ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(acc.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        text = "Tipo: ${acc.type.replace("_", " ")} | Saldo: R$ %.2f".format(acc.initial_balance),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                    )
-                                }
-                                Row {
-                                    IconButton(onClick = { onEditAccount(acc) }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                    IconButton(onClick = { onDeleteAccount(acc) }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun CategoriesCrudCard(
-    categories: List<Category>,
-    subcategories: List<Subcategory>,
-    onAddCategory: () -> Unit,
-    onEditCategory: (Category) -> Unit,
-    onDeleteCategory: (Category) -> Unit,
-    onAddSubcategory: () -> Unit,
-    onEditSubcategory: (Subcategory) -> Unit,
-    onDeleteSubcategory: (Subcategory) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Categorias e Subcategorias", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("${categories.size} categorias | ${subcategories.size} subcategorias", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    }
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Category list
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Categorias", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                            TextButton(onClick = onAddCategory) {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Nova Categoria")
-                            }
-                        }
-
-                        if (categories.isEmpty()) {
-                            Text("Nenhuma categoria criada.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                        } else {
-                            categories.forEach { cat ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(cat.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                    Row {
-                                        IconButton(onClick = { onEditCategory(cat) }) {
-                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                        }
-                                        IconButton(onClick = { onDeleteCategory(cat) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                    // Subcategory list
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Subcategorias", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                            TextButton(onClick = onAddSubcategory) {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Nova Subcategoria")
-                            }
-                        }
-
-                        if (subcategories.isEmpty()) {
-                            Text("Nenhuma subcategoria criada.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                        } else {
-                            subcategories.forEach { sub ->
-                                val catName = categories.find { it.id == sub.category_id }?.name ?: "Sem categoria"
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(sub.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                                        Text("Categoria: $catName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                                    }
-                                    Row {
-                                        IconButton(onClick = { onEditSubcategory(sub) }) {
-                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                        }
-                                        IconButton(onClick = { onDeleteSubcategory(sub) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SyncSettingsCard(
-    viewModel: MainViewModel,
-    syncState: MainViewModel.SyncState,
-    syncLogs: List<String>
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Sincronização Cloud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        val statusText = when (syncState) {
-                            is MainViewModel.SyncState.Syncing -> "Sincronizando..."
-                            is MainViewModel.SyncState.Success -> "Sincronizado"
-                            is MainViewModel.SyncState.Error -> "Erro na sincronização"
-                            else -> "Pronto"
-                        }
-                        Text(statusText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    }
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { viewModel.triggerPush() },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            enabled = viewModel.currentUserId != "GUEST"
-                        ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Enviar", fontSize = 12.sp)
-                        }
-
-                        Button(
-                            onClick = { viewModel.triggerPull() },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            enabled = viewModel.currentUserId != "GUEST"
-                        ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Baixar", fontSize = 12.sp)
-                        }
-                    }
-
-                    if (viewModel.currentUserId == "GUEST") {
-                        Text(
-                            text = "Sincronização desativada no modo Convidado.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Text("Registro de Auditoria (Sync Logs)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                    ) {
-                        if (syncLogs.isEmpty()) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("Nenhum evento registrado.", style = MaterialTheme.typography.bodySmall)
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                items(syncLogs) { log ->
-                                    Text(
-                                        text = log,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun BackupSettingsCard(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val userId = viewModel.currentUserId
-
-    val currentMonth = remember {
-        java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
-    }
-
-    var startMonth by remember { mutableStateOf(currentMonth) }
-    var endMonth by remember { mutableStateOf(currentMonth) }
-    var showStartMonthPicker by remember { mutableStateOf(false) }
-    var showEndMonthPicker by remember { mutableStateOf(false) }
-
-    var pdfStartMonth by remember { mutableStateOf(currentMonth) }
-    var pdfEndMonth by remember { mutableStateOf(currentMonth) }
-    var showPdfStartMonthPicker by remember { mutableStateOf(false) }
-    var showPdfEndMonthPicker by remember { mutableStateOf(false) }
-    var pdfAllMonths by remember { mutableStateOf(false) }
-    var pdfExportErrorMessage by remember { mutableStateOf<String?>(null) }
-
-    var selectedCategoryForPdf by remember { mutableStateOf<com.example.data.model.Category?>(null) }
-    var selectedSubcategoryForPdf by remember { mutableStateOf<com.example.data.model.Subcategory?>(null) }
-    var showCategoryDropdown by remember { mutableStateOf(false) }
-    var showSubcategoryDropdown by remember { mutableStateOf(false) }
-
-    val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(emptyList())
-    val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(emptyList())
-
-    // Month picker dialogs
-    if (showStartMonthPicker) {
-        MonthYearPickerDialog(
-            initialMonth = startMonth,
-            onDismiss = { showStartMonthPicker = false },
-            onConfirm = {
-                startMonth = it
-                showStartMonthPicker = false
-            }
-        )
-    }
-
-    if (showEndMonthPicker) {
-        MonthYearPickerDialog(
-            initialMonth = endMonth,
-            onDismiss = { showEndMonthPicker = false },
-            onConfirm = {
-                endMonth = it
-                showEndMonthPicker = false
-            }
-        )
-    }
-
-    if (showPdfStartMonthPicker) {
-        MonthYearPickerDialog(
-            initialMonth = pdfStartMonth,
-            onDismiss = { showPdfStartMonthPicker = false },
-            onConfirm = {
-                pdfStartMonth = it
-                showPdfStartMonthPicker = false
-            }
-        )
-    }
-
-    if (showPdfEndMonthPicker) {
-        MonthYearPickerDialog(
-            initialMonth = pdfEndMonth,
-            onDismiss = { showPdfEndMonthPicker = false },
-            onConfirm = {
-                pdfEndMonth = it
-                showPdfEndMonthPicker = false
-            }
-        )
-    }
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Backup,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Backup e Exportação",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Cópia de segurança e extratos",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Backup Completo (JSON)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    Text(
-                        text = "Gere uma cópia em formato JSON contendo absolutamente todos os seus dados locais (Contas, Transações, Envelopes, Alocações, Planejamentos, Metas, etc.). Você pode salvar este arquivo de forma segura ou compartilhá-lo.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                try {
-                                    val jsonContent = viewModel.exportAllDataJson(userId)
-                                    val backupFile = java.io.File(context.cacheDir, "meu_financeiro_backup.json")
-                                    backupFile.writeText(jsonContent)
-
-                                    val authority = "${context.packageName}.fileprovider"
-                                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                                        context,
-                                        authority,
-                                        backupFile
-                                    )
-
-                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "application/json"
-                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Backup de Dados")
-                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-
-                                    context.startActivity(
-                                        android.content.Intent.createChooser(
-                                            shareIntent,
-                                            "Compartilhar arquivo de Backup"
-                                        )
-                                    )
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Exportar todos os dados (JSON)")
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    // --- EXPORT EXTRATO ---
-                    Text(
-                        text = "Exportar Extrato (Excel / CSV)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    Text(
-                        text = "Selecione o período do extrato para exportar as transações e o resumo financeiro por categoria.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showStartMonthPicker = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Mês Inicial", style = MaterialTheme.typography.labelSmall)
-                                Text(
-                                    text = com.example.utils.ExportHelper.formatMonthPtBr(startMonth),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        OutlinedButton(
-                            onClick = { showEndMonthPicker = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Mês Final", style = MaterialTheme.typography.labelSmall)
-                                Text(
-                                    text = com.example.utils.ExportHelper.formatMonthPtBr(endMonth),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                try {
-                                    val accounts = viewModel.repository.getAllAccounts(userId)
-                                    val transactions = viewModel.repository.getAllTransactions(userId)
-                                    val categories = viewModel.repository.getAllCategories(userId)
-                                    val subcategories = viewModel.repository.getAllSubcategories(userId)
-
-                                    val file = com.example.utils.ExportHelper.exportToCsv(
-                                        context = context,
-                                        startMonth = startMonth,
-                                        endMonth = endMonth,
-                                        accounts = accounts,
-                                        transactions = transactions,
-                                        categories = categories,
-                                        subcategories = subcategories
-                                    )
-
-                                    if (file != null) {
-                                        val authority = "${context.packageName}.fileprovider"
-                                        val uri = androidx.core.content.FileProvider.getUriForFile(
-                                            context,
-                                            authority,
-                                            file
-                                        )
-
-                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                            type = "text/csv"
-                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Extrato CSV")
-                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-
-                                        context.startActivity(
-                                            android.content.Intent.createChooser(
-                                                shareIntent,
-                                                "Compartilhar Extrato (CSV)"
-                                            )
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FileDownload,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Exportar Extrato (CSV)", maxLines = 1)
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    // --- EXPORT COMPROVANTES ---
-                    Text(
-                        text = "Exportar Comprovantes (PDF)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    Text(
-                        text = "Gere um arquivo PDF mesclando todas as fotos ou PDFs de comprovantes anexados às suas transações filtradas por categoria e período.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // Error Message Banner if no transactions found
-                    pdfExportErrorMessage?.let { errMsg ->
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("pdf_error_banner")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ErrorOutline,
-                                    contentDescription = "Erro"
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = errMsg,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                IconButton(onClick = { pdfExportErrorMessage = null }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Fechar"
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Shortcut for all months (Selecionar todos os meses)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().testTag("pdf_all_months_row"),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        Checkbox(
-                            checked = pdfAllMonths,
-                            onCheckedChange = { pdfAllMonths = it },
-                            modifier = Modifier.testTag("pdf_all_months_checkbox")
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Selecionar todos os meses",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.clickable { pdfAllMonths = !pdfAllMonths }
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showPdfStartMonthPicker = true },
-                            modifier = Modifier.weight(1f).testTag("pdf_start_month_btn"),
-                            shape = RoundedCornerShape(8.dp),
-                            enabled = !pdfAllMonths
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Mês Inicial", style = MaterialTheme.typography.labelSmall)
-                                Text(
-                                    text = if (pdfAllMonths) "Todos" else com.example.utils.ExportHelper.formatMonthPtBr(pdfStartMonth),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        OutlinedButton(
-                            onClick = { showPdfEndMonthPicker = true },
-                            modifier = Modifier.weight(1f).testTag("pdf_end_month_btn"),
-                            shape = RoundedCornerShape(8.dp),
-                            enabled = !pdfAllMonths
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Mês Final", style = MaterialTheme.typography.labelSmall)
-                                Text(
-                                    text = if (pdfAllMonths) "Todos" else com.example.utils.ExportHelper.formatMonthPtBr(pdfEndMonth),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-
-                    // Category dropdown button
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { showCategoryDropdown = true },
-                            modifier = Modifier.fillMaxWidth().testTag("pdf_category_btn"),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = selectedCategoryForPdf?.name ?: "Todas as Categorias",
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        DropdownMenu(
-                            expanded = showCategoryDropdown,
-                            onDismissRequest = { showCategoryDropdown = false },
-                            modifier = Modifier.fillMaxWidth(0.85f)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Todas as Categorias") },
-                                onClick = {
-                                    selectedCategoryForPdf = null
-                                    selectedSubcategoryForPdf = null
-                                    showCategoryDropdown = false
-                                }
-                            )
-                            categories.forEach { cat ->
-                                DropdownMenuItem(
-                                    text = { Text(cat.name) },
-                                    onClick = {
-                                        selectedCategoryForPdf = cat
-                                        selectedSubcategoryForPdf = null
-                                        showCategoryDropdown = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // Subcategory dropdown button (Dependent on Category being selected, always visible but disabled if not selected)
-                    val isSubcategoryEnabled = selectedCategoryForPdf != null
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { if (isSubcategoryEnabled) showSubcategoryDropdown = true },
-                            modifier = Modifier.fillMaxWidth().testTag("pdf_subcategory_btn"),
-                            enabled = isSubcategoryEnabled,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (!isSubcategoryEnabled) {
-                                        "Selecione uma Categoria primeiro"
-                                    } else {
-                                        selectedSubcategoryForPdf?.name ?: "Todas as Subcategorias"
-                                    },
-                                    color = if (isSubcategoryEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    tint = if (isSubcategoryEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                )
-                            }
-                        }
-                        if (isSubcategoryEnabled) {
-                            val filteredSubs = subcategories.filter { it.category_id == selectedCategoryForPdf!!.id }
-                            DropdownMenu(
-                                expanded = showSubcategoryDropdown,
-                                onDismissRequest = { showSubcategoryDropdown = false },
-                                modifier = Modifier.fillMaxWidth(0.85f)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Todas as Subcategorias") },
-                                    onClick = {
-                                        selectedSubcategoryForPdf = null
-                                        showSubcategoryDropdown = false
-                                    }
-                                )
-                                filteredSubs.forEach { sub ->
-                                    DropdownMenuItem(
-                                        text = { Text(sub.name) },
-                                        onClick = {
-                                            selectedSubcategoryForPdf = sub
-                                            showSubcategoryDropdown = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            pdfExportErrorMessage = null // Reset message
-                            scope.launch {
-                                try {
-                                    val transactions = viewModel.repository.getAllTransactions(userId)
-                                    val categoriesList = viewModel.repository.getAllCategories(userId)
-                                    val subcategoriesList = viewModel.repository.getAllSubcategories(userId)
-
-                                    val file = com.example.utils.ExportHelper.exportToPdf(
-                                        context = context,
-                                        startMonth = if (pdfAllMonths) "" else pdfStartMonth,
-                                        endMonth = if (pdfAllMonths) "" else pdfEndMonth,
-                                        selectedCategory = selectedCategoryForPdf,
-                                        selectedSubcategory = selectedSubcategoryForPdf,
-                                        transactions = transactions,
-                                        categories = categoriesList,
-                                        subcategories = subcategoriesList
-                                    )
-
-                                    if (file != null) {
-                                        val authority = "${context.packageName}.fileprovider"
-                                        val uri = androidx.core.content.FileProvider.getUriForFile(
-                                            context,
-                                            authority,
-                                            file
-                                        )
-
-                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                            type = "application/pdf"
-                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Comprovantes Exportados")
-                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-
-                                        context.startActivity(
-                                            android.content.Intent.createChooser(
-                                                shareIntent,
-                                                "Compartilhar Comprovantes (PDF)"
-                                            )
-                                        )
-                                    } else {
-                                        pdfExportErrorMessage = "Nenhum comprovante encontrado com esses filtros"
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    pdfExportErrorMessage = "Erro ao exportar PDF: ${e.message}"
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("pdf_export_submit_btn"),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PictureAsPdf,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Exportar Comprovantes (PDF)")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MonthYearPickerDialog(
-    initialMonth: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
-) {
-    val years = remember { (2020..2030).toList() }
-    val months = remember {
-        listOf(
-            "Jan" to "01", "Fev" to "02", "Mar" to "03", "Abr" to "04",
-            "Mai" to "05", "Jun" to "06", "Jul" to "07", "Ago" to "08",
-            "Set" to "09", "Out" to "10", "Nov" to "11", "Dez" to "12"
-        )
-    }
-
-    val parts = initialMonth.split("-")
-    val initialYear = parts.getOrNull(0)?.toIntOrNull() ?: 2026
-    val initialMonthVal = parts.getOrNull(1) ?: "01"
-
-    var selectedYear by remember { mutableStateOf(initialYear) }
-    var selectedMonthVal by remember { mutableStateOf(initialMonthVal) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = "Selecionar Mês/Ano",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
                 )
-
-                // Year selector row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { selectedYear -= 1 }) {
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowLeft,
-                            contentDescription = "Ano anterior",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                if (subtitle.isNotBlank()) {
                     Text(
-                        text = selectedYear.toString(),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = secondaryTextColor
                     )
-                    IconButton(onClick = { selectedYear += 1 }) {
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowRight,
-                            contentDescription = "Próximo ano",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                // Month Grid
-                androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-                    columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.height(180.dp)
-                ) {
-                    items(months.size) { index ->
-                        val (name, value) = months[index]
-                        val isSelected = selectedMonthVal == value
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else Color.Transparent
-                                )
-                                .clickable {
-                                    selectedMonthVal = value
-                                }
-                                .padding(4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = name,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                        else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancelar")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = {
-                        val result = String.format(java.util.Locale.US, "%d-%s", selectedYear, selectedMonthVal)
-                        onConfirm(result)
-                    }) {
-                        Text("Confirmar")
-                    }
                 }
             }
+        }
+
+        if (trailingContent != null) {
+            trailingContent()
+        } else {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = secondaryTextColor,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
 
-// --- CRUD DIALOGS ---
+// --- FORM DIALOGS ---
 
 @Composable
 fun AccountFormDialog(
@@ -1448,22 +787,22 @@ fun AccountFormDialog(
     onSave: (Account) -> Unit
 ) {
     var name by remember { mutableStateOf(account?.name ?: "") }
-    var type by remember { mutableStateOf(account?.type ?: "CONTA_CORRENTE") }
-    var balance by remember { mutableStateOf(account?.initial_balance?.toString() ?: "") }
+    var type by remember { mutableStateOf(account?.type ?: "CORRENTE") }
+    var balanceStr by remember { mutableStateOf((account?.initial_balance ?: 0.0).toString()) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier.padding(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
                     text = if (account == null) "Nova Conta" else "Editar Conta",
-                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -1475,59 +814,48 @@ fun AccountFormDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Tipo da Conta", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                    val options = listOf(
-                        "CONTA_CORRENTE" to "Conta Corrente",
-                        "CARTAO_CREDITO" to "Cartão de Crédito",
-                        "DINHEIRO" to "Dinheiro em Espécie"
-                    )
-                    options.forEach { (key, label) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { type = key }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = type == key, onClick = { type = key })
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(label, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-
                 OutlinedTextField(
-                    value = balance,
-                    onValueChange = { balance = it },
-                    label = { Text("Saldo Inicial") },
+                    value = balanceStr,
+                    onValueChange = { balanceStr = it },
+                    label = { Text("Saldo Inicial (R$)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                Text("Tipo de Conta", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                val types = listOf("CORRENTE" to "Conta Corrente", "POUPANCA" to "Poupança", "INVESTIMENTO" to "Investimento", "DINHEIRO" to "Dinheiro")
+                Column {
+                    types.forEach { (tKey, tLabel) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { type = tKey }
+                                .padding(vertical = 4.dp, horizontal = 8.dp)
+                        ) {
+                            RadioButton(selected = type == tKey, onClick = { type = tKey })
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(tLabel, fontSize = 13.sp)
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) { Text("Cancelar") }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            if (name.isNotBlank()) {
-                                val dBalance = balance.toDoubleOrNull() ?: 0.0
-                                onSave(
-                                    Account(
-                                        id = account?.id ?: 0,
-                                        name = name,
-                                        type = type,
-                                        initial_balance = dBalance,
-                                        archived = account?.archived ?: false
-                                    )
-                                )
-                            }
-                        }
+                            val bal = balanceStr.toDoubleOrNull() ?: 0.0
+                            val targetAcc = account?.copy(name = name, type = type, initial_balance = bal)
+                                ?: Account(name = name, type = type, initial_balance = bal)
+                            onSave(targetAcc)
+                        },
+                        enabled = name.isNotBlank()
                     ) {
                         Text("Salvar")
                     }
@@ -1537,8 +865,6 @@ fun AccountFormDialog(
     }
 }
 
-
-
 @Composable
 fun CategoryFormDialog(
     category: Category?,
@@ -1547,21 +873,20 @@ fun CategoryFormDialog(
 ) {
     var name by remember { mutableStateOf(category?.name ?: "") }
     var subcategoryName by remember { mutableStateOf("") }
-    var showError by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier.padding(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
                     text = if (category == null) "Nova Categoria" else "Editar Categoria",
-                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -1577,45 +902,25 @@ fun CategoryFormDialog(
                     OutlinedTextField(
                         value = subcategoryName,
                         onValueChange = { subcategoryName = it },
-                        label = { Text("Nome da primeira subcategoria") },
+                        label = { Text("Subcategoria Inicial (Opcional)") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = showError && subcategoryName.isBlank()
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (showError && subcategoryName.isBlank()) {
-                        Text(
-                            text = "A primeira subcategoria é obrigatória.",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) { Text("Cancelar") }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            if (name.isBlank()) {
-                                return@Button
-                            }
-                            if (category == null && subcategoryName.isBlank()) {
-                                showError = true
-                                return@Button
-                            }
-                            onSave(
-                                Category(
-                                    id = category?.id ?: 0,
-                                    name = name.trim(),
-                                    archived = category?.archived ?: false
-                                ),
-                                if (category == null) subcategoryName.trim() else null
-                            )
-                        }
+                            val targetCat = category?.copy(name = name)
+                                ?: Category(name = name)
+                            onSave(targetCat, subcategoryName)
+                        },
+                        enabled = name.isNotBlank()
                     ) {
                         Text("Salvar")
                     }
@@ -1633,22 +938,21 @@ fun SubcategoryFormDialog(
     onSave: (Subcategory) -> Unit
 ) {
     var name by remember { mutableStateOf(subcategory?.name ?: "") }
-    var selectedCat by remember { mutableStateOf(subcategory?.category_id ?: categories.firstOrNull()?.id) }
-    var dropdownExpanded by remember { mutableStateOf(false) }
+    var selectedCatId by remember { mutableStateOf(subcategory?.category_id ?: categories.firstOrNull()?.id ?: 0) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier.padding(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
                     text = if (subcategory == null) "Nova Subcategoria" else "Editar Subcategoria",
-                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -1660,43 +964,251 @@ fun SubcategoryFormDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Categoria Relacionada (Obrigatória)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                    val activeCatText = categories.find { it.id == selectedCat }?.name ?: "Selecione uma categoria"
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .clickable { dropdownExpanded = true }
-                            .padding(16.dp)
-                    ) {
+                Text("Categoria Pai", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Column {
+                    categories.forEach { cat ->
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { selectedCatId = cat.id }
+                                .padding(vertical = 4.dp, horizontal = 8.dp)
                         ) {
-                            Text(activeCatText)
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                        }
-
-                        DropdownMenu(
-                            expanded = dropdownExpanded,
-                            onDismissRequest = { dropdownExpanded = false },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            categories.forEach { cat ->
-                                DropdownMenuItem(
-                                    text = { Text(cat.name) },
-                                    onClick = {
-                                        selectedCat = cat.id
-                                        dropdownExpanded = false
-                                    }
-                                )
-                            }
+                            RadioButton(selected = selectedCatId == cat.id, onClick = { selectedCatId = cat.id })
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(cat.name, fontSize = 13.sp)
                         }
                     }
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val targetSub = subcategory?.copy(name = name, category_id = selectedCatId)
+                                ?: Subcategory(name = name, category_id = selectedCatId)
+                            onSave(targetSub)
+                        },
+                        enabled = name.isNotBlank() && selectedCatId != 0
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PinSetupDialog(
+    isChange: Boolean,
+    onDismiss: () -> Unit,
+    onSavePin: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = if (isChange) "Alterar PIN de Acesso" else "Cadastrar PIN de Acesso",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Digite um PIN numérico de 4 a 6 dígitos para proteger o aplicativo.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) pin = it },
+                    label = { Text("Novo PIN (4-6 dígitos)") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = confirmPin,
+                    onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) confirmPin = it },
+                    label = { Text("Confirmar Novo PIN") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (errorMsg != null) {
+                    Text(
+                        text = errorMsg!!,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (pin.length < 4) {
+                                errorMsg = "O PIN deve ter pelo menos 4 dígitos."
+                            } else if (pin != confirmPin) {
+                                errorMsg = "Os PINs digitados não coincidem."
+                            } else {
+                                onSavePin(pin)
+                            }
+                        },
+                        enabled = pin.isNotBlank() && confirmPin.isNotBlank()
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- DIALOGS DE EDICAO E CONFIGURACAO ---
+
+@Composable
+fun EditProfileDialog(
+    authState: AuthManager.AuthState,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val currentAuth = authState
+    val emailText = when (currentAuth) {
+        is AuthManager.AuthState.Authenticated -> currentAuth.user.email ?: "Autenticado via Google"
+        is AuthManager.AuthState.Guest -> "Modo Convidado (Local)"
+        else -> "Visitante"
+    }
+    var nameInput by remember {
+        mutableStateOf(
+            when (currentAuth) {
+                is AuthManager.AuthState.Authenticated -> currentAuth.user.displayName ?: currentAuth.user.email?.substringBefore("@") ?: "Usuário"
+                else -> "Convidado"
+            }
+        )
+    }
+    var phoneInput by remember { mutableStateOf("") }
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+
+    // TODO: decidir se implementa (campos foto, nome, telefone visuais sem persistência no banco nesta versão)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Editar Perfil",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                OutlinedTextField(
+                    value = nameInput,
+                    onValueChange = { nameInput = it },
+                    label = { Text("Nome completo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = emailText,
+                    onValueChange = {},
+                    label = { Text("E-mail (não editável)") },
+                    enabled = false,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = phoneInput,
+                    onValueChange = { phoneInput = it },
+                    label = { Text("Telefone (opcional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Alterar Senha",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                OutlinedTextField(
+                    value = currentPassword,
+                    onValueChange = { currentPassword = it },
+                    label = { Text("Senha atual") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it },
+                    label = { Text("Nova senha") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1707,16 +1219,8 @@ fun SubcategoryFormDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            if (name.isNotBlank() && selectedCat != null) {
-                                onSave(
-                                    Subcategory(
-                                        id = subcategory?.id ?: 0,
-                                        name = name,
-                                        category_id = selectedCat!!,
-                                        archived = subcategory?.archived ?: false
-                                    )
-                                )
-                            }
+                            Toast.makeText(context, "Perfil atualizado!", Toast.LENGTH_SHORT).show()
+                            onDismiss()
                         }
                     ) {
                         Text("Salvar")
@@ -1728,17 +1232,78 @@ fun SubcategoryFormDialog(
 }
 
 @Composable
-fun NotificationsCard(
-    viewModel: MainViewModel
+fun AppearanceDialog(
+    currentTheme: String,
+    onThemeSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Aparência e Tema",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                val options = listOf(
+                    "SYSTEM" to "Seguir Sistema",
+                    "LIGHT" to "Tema Claro",
+                    "DARK" to "Tema Escuro"
+                )
+
+                options.forEach { (mode, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onThemeSelected(mode) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentTheme == mode,
+                            onClick = { onThemeSelected(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(label, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Fechar") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationsDialog(
+    viewModel: MainViewModel,
+    onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    
+
     val notifyLimits by viewModel.userPreferences.notifyLimitsFlow.collectAsStateWithLifecycle(initialValue = true)
     val notifyCreditCard by viewModel.userPreferences.notifyCreditCardFlow.collectAsStateWithLifecycle(initialValue = true)
     val notifyInstallment by viewModel.userPreferences.notifyInstallmentFlow.collectAsStateWithLifecycle(initialValue = true)
     val notifyGoal by viewModel.userPreferences.notifyGoalFlow.collectAsStateWithLifecycle(initialValue = true)
     val notifyWeeklyReview by viewModel.userPreferences.notifyWeeklyReviewFlow.collectAsStateWithLifecycle(initialValue = true)
-    
+    val notifySyncFailure by viewModel.userPreferences.notifySyncFailureFlow.collectAsStateWithLifecycle(initialValue = true)
+
     val creditCardDaysBefore by viewModel.userPreferences.creditCardDaysBeforeFlow.collectAsStateWithLifecycle(initialValue = 3)
     val weeklyReviewDay by viewModel.userPreferences.weeklyReviewDayFlow.collectAsStateWithLifecycle(initialValue = 1)
     val weeklyReviewTime by viewModel.userPreferences.weeklyReviewTimeFlow.collectAsStateWithLifecycle(initialValue = "20:00")
@@ -1747,183 +1312,184 @@ fun NotificationsCard(
     var weeklyReviewTimeInput by remember(weeklyReviewTime) { mutableStateOf(weeklyReviewTime) }
     var dayDropdownExpanded by remember { mutableStateOf(false) }
 
-    val daysOfWeek = listOf(
-        "Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"
-    )
+    val daysOfWeek = listOf("Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado")
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(enabled = true)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Notifications,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Notificações e Alertas 🔔",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Text(
-                text = "Gerencie como e quando deseja receber alertas e notificações em tempo real.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // 1. Limits toggle
-            NotificationToggleRow(
-                title = "Limites de Categorias (80% / 100%)",
-                subtitle = "Alerta quando uma categoria atinge ou ultrapassa os limites planejados",
-                checked = notifyLimits,
-                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyLimits(it) } }
-            )
-
-            // 2. Credit card toggle
-            NotificationToggleRow(
-                title = "Faturas de Cartão",
-                subtitle = "Alerta quando uma fatura de cartão está próxima do vencimento",
-                checked = notifyCreditCard,
-                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyCreditCard(it) } }
-            )
-
-            if (notifyCreditCard) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Dias antes do vencimento:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        text = "Notificações e Alertas",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                    OutlinedTextField(
-                        value = cardDaysBeforeInput,
-                        onValueChange = { newValue ->
-                            cardDaysBeforeInput = newValue
-                            val parsed = newValue.toIntOrNull()
-                            if (parsed != null && parsed > 0) {
-                                scope.launch { viewModel.userPreferences.setCreditCardDaysBefore(parsed) }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.width(80.dp),
-                        textStyle = MaterialTheme.typography.bodyMedium
-                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
                 }
-            }
 
-            // 3. Installments toggle
-            NotificationToggleRow(
-                title = "Parcelas a Vencer",
-                subtitle = "Notifica parcelas que vencem nos próximos 3 dias",
-                checked = notifyInstallment,
-                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyInstallment(it) } }
-            )
+                Text(
+                    text = "Escolha quais notificações deseja receber em tempo real.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-            // 4. Goals toggle
-            NotificationToggleRow(
-                title = "Metas Alcançadas",
-                subtitle = "Parabeniza você instantaneamente ao atingir ou superar uma meta",
-                checked = notifyGoal,
-                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyGoal(it) } }
-            )
+                HorizontalDivider()
 
-            // 5. Weekly Review toggle
-            NotificationToggleRow(
-                title = "Revisão Semanal",
-                subtitle = "Resumo semanal contendo estatísticas de categorias e Pronto para Atribuir",
-                checked = notifyWeeklyReview,
-                onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyWeeklyReview(it) } }
-            )
+                // 1. Limites
+                NotificationToggleRow(
+                    title = "Limites de Categorias (80% / 100%)",
+                    subtitle = "Alerta ao atingir ou ultrapassar limites orçamentários",
+                    checked = notifyLimits,
+                    onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyLimits(it) } }
+                )
 
-            if (notifyWeeklyReview) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Day selection
+                // 2. Cartão de crédito
+                NotificationToggleRow(
+                    title = "Faturas de Cartão",
+                    subtitle = "Alerta faturas próximas do vencimento",
+                    checked = notifyCreditCard,
+                    onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyCreditCard(it) } }
+                )
+
+                if (notifyCreditCard) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Dia da Semana:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
+                        Text("Dias antes do vencimento:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = cardDaysBeforeInput,
+                            onValueChange = { newValue ->
+                                cardDaysBeforeInput = newValue
+                                val parsed = newValue.toIntOrNull()
+                                if (parsed != null && parsed > 0) {
+                                    scope.launch { viewModel.userPreferences.setCreditCardDaysBefore(parsed) }
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.width(70.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium
                         )
-                        Box {
-                            val currentDayName = daysOfWeek.getOrNull(weeklyReviewDay - 1) ?: "Selecione"
-                            Button(
-                                onClick = { dayDropdownExpanded = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                            ) {
-                                Text(currentDayName)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                            }
-                            DropdownMenu(
-                                expanded = dayDropdownExpanded,
-                                onDismissRequest = { dayDropdownExpanded = false }
-                            ) {
-                                daysOfWeek.forEachIndexed { index, day ->
-                                    DropdownMenuItem(
-                                        text = { Text(day) },
-                                        onClick = {
-                                            scope.launch { viewModel.userPreferences.setWeeklyReviewDay(index + 1) }
-                                            dayDropdownExpanded = false
-                                        }
-                                    )
+                    }
+                }
+
+                // 3. Parcelas
+                NotificationToggleRow(
+                    title = "Parcelas a Vencer",
+                    subtitle = "Notifica parcelas vencendo nos próximos 3 dias",
+                    checked = notifyInstallment,
+                    onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyInstallment(it) } }
+                )
+
+                // 4. Metas
+                NotificationToggleRow(
+                    title = "Metas Alcançadas",
+                    subtitle = "Parabeniza ao atingir ou superar uma meta",
+                    checked = notifyGoal,
+                    onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyGoal(it) } }
+                )
+
+                // 5. Revisão Semanal
+                NotificationToggleRow(
+                    title = "Revisão Semanal",
+                    subtitle = "Resumo semanal contendo estatísticas financeiras",
+                    checked = notifyWeeklyReview,
+                    onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifyWeeklyReview(it) } }
+                )
+
+                if (notifyWeeklyReview) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Dia:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Box {
+                                val currentDayName = daysOfWeek.getOrNull(weeklyReviewDay - 1) ?: "Selecione"
+                                Button(
+                                    onClick = { dayDropdownExpanded = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                                ) {
+                                    Text(currentDayName, fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                                DropdownMenu(
+                                    expanded = dayDropdownExpanded,
+                                    onDismissRequest = { dayDropdownExpanded = false }
+                                ) {
+                                    daysOfWeek.forEachIndexed { index, day ->
+                                        DropdownMenuItem(
+                                            text = { Text(day) },
+                                            onClick = {
+                                                scope.launch { viewModel.userPreferences.setWeeklyReviewDay(index + 1) }
+                                                dayDropdownExpanded = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Time selection
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "Horário (HH:mm):",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        OutlinedTextField(
-                            value = weeklyReviewTimeInput,
-                            onValueChange = { newValue ->
-                                weeklyReviewTimeInput = newValue
-                                if (newValue.matches(Regex("^([01]?[0-9]|2[0-3]):[0-5][0-9]$"))) {
-                                    scope.launch { viewModel.userPreferences.setWeeklyReviewTime(newValue) }
-                                }
-                            },
-                            singleLine = true,
-                            modifier = Modifier.width(100.dp),
-                            textStyle = MaterialTheme.typography.bodyMedium,
-                            placeholder = { Text("20:00") }
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Horário (HH:mm):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = weeklyReviewTimeInput,
+                                onValueChange = { newValue ->
+                                    weeklyReviewTimeInput = newValue
+                                    if (newValue.matches(Regex("^([01]?[0-9]|2[0-3]):[0-5][0-9]$"))) {
+                                        scope.launch { viewModel.userPreferences.setWeeklyReviewTime(newValue) }
+                                    }
+                                },
+                                singleLine = true,
+                                modifier = Modifier.width(90.dp),
+                                textStyle = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
+                }
+
+                // 6. Falha de sincronização (Novo)
+                NotificationToggleRow(
+                    title = "Falhas de Sincronização",
+                    subtitle = "Notifica caso ocorra erro ao sincronizar dados com a nuvem",
+                    checked = notifySyncFailure,
+                    onCheckedChange = { scope.launch { viewModel.userPreferences.setNotifySyncFailure(it) } }
+                )
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Salvar e Fechar")
                 }
             }
         }
@@ -1943,8 +1509,8 @@ fun NotificationToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(modifier = Modifier.width(8.dp))
         Switch(
@@ -1956,12 +1522,1022 @@ fun NotificationToggleRow(
 }
 
 @Composable
-fun SecuritySettingsCard(
+fun RecurrenceRulesDialog(
+    rules: List<RecurrenceRule>,
+    categories: List<Category>,
     viewModel: MainViewModel,
-    modifier: Modifier = Modifier
+    onDismiss: () -> Unit,
+    onEditRule: (RecurrenceRule) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Transações Recorrentes",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
+                }
+
+                Text(
+                    text = "Lançamentos automáticos configurados para se repetirem periodicamente.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val activeRules = rules.filter { it.active }
+
+                if (activeRules.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Nenhuma transação recorrente ativa.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(activeRules, key = { it.id }) { rule ->
+                            val catName = categories.find { it.id == rule.category_id }?.name ?: "Sem categoria"
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = rule.description.ifBlank { "Transação Recorrente" },
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            text = "Categoria: $catName • Frequência: ${rule.frequency}",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "R$ %.2f | Início: %s | Fim: %s".format(
+                                                rule.value,
+                                                rule.start_date,
+                                                rule.end_month ?: "Indefinido"
+                                            ),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (rule.type == "RECEITA") Color(0xFF22A45D) else Color(0xFFEF4444)
+                                        )
+                                    }
+
+                                    Row {
+                                        IconButton(onClick = { onEditRule(rule) }) {
+                                            Icon(
+                                                Icons.Default.Edit,
+                                                contentDescription = "Editar",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    viewModel.repository.updateRecurrenceRule(rule.copy(active = false))
+                                                    viewModel.triggerPush()
+                                                }
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Desativar",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Concluído")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditRecurrenceRuleDialog(
+    rule: RecurrenceRule,
+    categories: List<Category>,
+    onDismiss: () -> Unit,
+    onSave: (RecurrenceRule) -> Unit
+) {
+    var description by remember { mutableStateOf(rule.description) }
+    var valueStr by remember { mutableStateOf(rule.value.toString()) }
+    var endMonth by remember { mutableStateOf(rule.end_month ?: "") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Editar Regra Recorrente",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Descrição") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = valueStr,
+                    onValueChange = { valueStr = it },
+                    label = { Text("Valor (R$)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = endMonth,
+                    onValueChange = { endMonth = it },
+                    label = { Text("Mês Final (AAAA-MM) ou Vazio") },
+                    placeholder = { Text("Ex: 2026-12") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val v = valueStr.toDoubleOrNull() ?: rule.value
+                            onSave(
+                                rule.copy(
+                                    description = description,
+                                    value = v,
+                                    end_month = endMonth.ifBlank { null }
+                                )
+                            )
+                        }
+                    ) {
+                        Text("Salvar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountsCrudDialog(
+    accounts: List<Account>,
+    onDismiss: () -> Unit,
+    onAddAccount: () -> Unit,
+    onEditAccount: (Account) -> Unit,
+    onDeleteAccount: (Account) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Gerenciar Contas", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
+                }
+
+                Button(
+                    onClick = onAddAccount,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Adicionar Nova Conta")
+                }
+
+                if (accounts.isEmpty()) {
+                    Text(
+                        text = "Nenhuma conta cadastrada.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(accounts, key = { it.id }) { acc ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(acc.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(
+                                        text = "Tipo: ${acc.type.replace("_", " ")} | Saldo: R$ %.2f".format(acc.initial_balance),
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Row {
+                                    IconButton(onClick = { onEditAccount(acc) }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    }
+                                    IconButton(onClick = { onDeleteAccount(acc) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Concluído")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CategoriesCrudDialog(
+    categories: List<Category>,
+    subcategories: List<Subcategory>,
+    onDismiss: () -> Unit,
+    onAddCategory: () -> Unit,
+    onEditCategory: (Category) -> Unit,
+    onDeleteCategory: (Category) -> Unit,
+    onAddSubcategory: () -> Unit,
+    onEditSubcategory: (Subcategory) -> Unit,
+    onDeleteSubcategory: (Subcategory) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Categorias e Subcategorias", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
+                }
+
+                // Category Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Categorias", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    TextButton(onClick = onAddCategory) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Nova Categoria", fontSize = 12.sp)
+                    }
+                }
+
+                if (categories.isEmpty()) {
+                    Text("Nenhuma categoria criada.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                } else {
+                    categories.forEach { cat ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(cat.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Row {
+                                IconButton(onClick = { onEditCategory(cat) }) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                                IconButton(onClick = { onDeleteCategory(cat) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Subcategory Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Subcategorias", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    TextButton(onClick = onAddSubcategory) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Nova Subcategoria", fontSize = 12.sp)
+                    }
+                }
+
+                if (subcategories.isEmpty()) {
+                    Text("Nenhuma subcategoria criada.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                } else {
+                    subcategories.forEach { sub ->
+                        val catName = categories.find { it.id == sub.category_id }?.name ?: "Sem categoria"
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(sub.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Categoria: $catName", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                            }
+                            Row {
+                                IconButton(onClick = { onEditSubcategory(sub) }) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                                IconButton(onClick = { onDeleteSubcategory(sub) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Concluído")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SyncSettingsDialog(
+    viewModel: MainViewModel,
+    syncState: MainViewModel.SyncState,
+    syncLogs: List<String>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Backup e Sincronização", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
+                }
+
+                val statusText = when (syncState) {
+                    is MainViewModel.SyncState.Syncing -> "Sincronizando..."
+                    is MainViewModel.SyncState.Success -> "Sincronizado"
+                    is MainViewModel.SyncState.Error -> "Erro na sincronização"
+                    else -> "Pronto"
+                }
+                Text("Status atual: $statusText", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.triggerPush() },
+                        modifier = Modifier.weight(1f),
+                        enabled = viewModel.currentUserId != "GUEST"
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Enviar", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = { viewModel.triggerPull() },
+                        modifier = Modifier.weight(1f),
+                        enabled = viewModel.currentUserId != "GUEST"
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Baixar", fontSize = 12.sp)
+                    }
+                }
+
+                if (viewModel.currentUserId == "GUEST") {
+                    Text(
+                        text = "Sincronização desativada no modo Convidado.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Text("Registro de Auditoria (Sync Logs)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                ) {
+                    if (syncLogs.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Nenhum evento registrado.", fontSize = 12.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(syncLogs) { log ->
+                                Text(
+                                    text = log,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Fechar")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ExportDataDialog(
+    viewModel: MainViewModel,
+    accounts: List<Account>,
+    transactions: List<com.example.data.model.Transaction>,
+    categories: List<Category>,
+    subcategories: List<Subcategory>,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val userId = viewModel.currentUserId
+
+    val currentMonth = remember {
+        java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
+    }
+
+    var exportAllMonths by remember { mutableStateOf(true) }
+    var startMonth by remember { mutableStateOf(currentMonth) }
+    var endMonth by remember { mutableStateOf(currentMonth) }
+    var showStartMonthPicker by remember { mutableStateOf(false) }
+    var showEndMonthPicker by remember { mutableStateOf(false) }
+
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var selectedSubcategory by remember { mutableStateOf<Subcategory?>(null) }
+
+    var expandedCategoryDropdown by remember { mutableStateOf(false) }
+    var expandedSubcategoryDropdown by remember { mutableStateOf(false) }
+
+    val startCal = remember(startMonth) {
+        Calendar.getInstance().apply {
+            try {
+                val parts = startMonth.split("-")
+                set(Calendar.YEAR, parts[0].toInt())
+                set(Calendar.MONTH, parts[1].toInt() - 1)
+            } catch (e: Exception) {}
+        }
+    }
+
+    val endCal = remember(endMonth) {
+        Calendar.getInstance().apply {
+            try {
+                val parts = endMonth.split("-")
+                set(Calendar.YEAR, parts[0].toInt())
+                set(Calendar.MONTH, parts[1].toInt() - 1)
+            } catch (e: Exception) {}
+        }
+    }
+
+    if (showStartMonthPicker) {
+        com.example.ui.screens.MonthYearPickerDialog(
+            currentCalendar = startCal,
+            onDismiss = { showStartMonthPicker = false },
+            onSelected = { y, m ->
+                startMonth = "%04d-%02d".format(y, m + 1)
+                showStartMonthPicker = false
+            }
+        )
+    }
+
+    if (showEndMonthPicker) {
+        com.example.ui.screens.MonthYearPickerDialog(
+            currentCalendar = endCal,
+            onDismiss = { showEndMonthPicker = false },
+            onSelected = { y, m ->
+                endMonth = "%04d-%02d".format(y, m + 1)
+                showEndMonthPicker = false
+            }
+        )
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Exportar Dados", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
+                }
+
+                Text(
+                    text = "Gere relatórios e comprovantes em PDF, planilhas CSV/Excel ou backup completo em JSON.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // --- FILTRO DE PERÍODO ---
+                Text("Filtro de Período", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { exportAllMonths = !exportAllMonths }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = exportAllMonths,
+                        onCheckedChange = { exportAllMonths = it }
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Exportar todo o período (Todos os meses)", fontSize = 13.sp)
+                }
+
+                if (!exportAllMonths) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showStartMonthPicker = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("De: ${ExportHelper.formatMonthPtBr(startMonth)}", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { showEndMonthPicker = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Até: ${ExportHelper.formatMonthPtBr(endMonth)}", fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                // --- FILTRO DE CATEGORIA E SUBCATEGORIA ---
+                Text("Filtro por Categoria e Subcategoria", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                // Dropdown Categoria
+                Column {
+                    Text("Categoria", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box {
+                        OutlinedButton(
+                            onClick = { expandedCategoryDropdown = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = selectedCategory?.name ?: "Todas as Categorias",
+                                    fontSize = 13.sp
+                                )
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = expandedCategoryDropdown,
+                            onDismissRequest = { expandedCategoryDropdown = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Todas as Categorias", fontWeight = if (selectedCategory == null) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    selectedCategory = null
+                                    selectedSubcategory = null
+                                    expandedCategoryDropdown = false
+                                }
+                            )
+                            categories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name, fontWeight = if (selectedCategory?.id == cat.id) FontWeight.Bold else FontWeight.Normal) },
+                                    onClick = {
+                                        selectedCategory = cat
+                                        if (selectedSubcategory != null && selectedSubcategory?.category_id != cat.id) {
+                                            selectedSubcategory = null
+                                        }
+                                        expandedCategoryDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Dropdown Subcategoria
+                val filteredSubcategories = remember(selectedCategory, subcategories) {
+                    if (selectedCategory == null) subcategories
+                    else subcategories.filter { it.category_id == selectedCategory?.id }
+                }
+
+                Column {
+                    Text("Subcategoria", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box {
+                        OutlinedButton(
+                            onClick = { expandedSubcategoryDropdown = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = selectedSubcategory?.name ?: "Todas as Subcategorias",
+                                    fontSize = 13.sp
+                                )
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = expandedSubcategoryDropdown,
+                            onDismissRequest = { expandedSubcategoryDropdown = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Todas as Subcategorias", fontWeight = if (selectedSubcategory == null) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    selectedSubcategory = null
+                                    expandedSubcategoryDropdown = false
+                                }
+                            )
+                            filteredSubcategories.forEach { sub ->
+                                DropdownMenuItem(
+                                    text = { Text(sub.name, fontWeight = if (selectedSubcategory?.id == sub.id) FontWeight.Bold else FontWeight.Normal) },
+                                    onClick = {
+                                        selectedSubcategory = sub
+                                        expandedSubcategoryDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                // --- OPÇÕES DE EXPORTAÇÃO ---
+                Text("Opções de Exportação", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                val effectiveStartMonth = if (exportAllMonths) "" else startMonth
+                val effectiveEndMonth = if (exportAllMonths) "" else endMonth
+
+                // Exportar PDF (Comprovantes / Relatório)
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val file = ExportHelper.exportToPdf(
+                                    context = context,
+                                    startMonth = effectiveStartMonth,
+                                    endMonth = effectiveEndMonth,
+                                    selectedCategory = selectedCategory,
+                                    selectedSubcategory = selectedSubcategory,
+                                    transactions = transactions,
+                                    categories = categories,
+                                    subcategories = subcategories
+                                )
+                                if (file != null) {
+                                    val authority = "${context.packageName}.fileprovider"
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Comprovantes e Extrato PDF")
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, "Exportar PDF"))
+                                } else {
+                                    Toast.makeText(context, "Nenhum comprovante/transação encontrada para os filtros selecionados.", Toast.LENGTH_LONG).show()
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Exportar PDF (Comprovantes)")
+                }
+
+                // Exportar CSV
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val file = ExportHelper.exportToCsv(
+                                    context = context,
+                                    startMonth = effectiveStartMonth,
+                                    endMonth = effectiveEndMonth,
+                                    accounts = accounts,
+                                    transactions = transactions,
+                                    categories = categories,
+                                    subcategories = subcategories
+                                )
+                                if (file != null) {
+                                    val authority = "${context.packageName}.fileprovider"
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/csv"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, "Exportar CSV"))
+                                } else {
+                                    Toast.makeText(context, "Nenhum dado encontrado para exportação.", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                ) {
+                    Text("Exportar CSV (Planilha)")
+                }
+
+                // Exportar Backup JSON
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val jsonContent = viewModel.exportAllDataJson(userId)
+                                val backupFile = File(context.cacheDir, "meu_financeiro_backup.json")
+                                backupFile.writeText(jsonContent)
+
+                                val authority = "${context.packageName}.fileprovider"
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    context,
+                                    authority,
+                                    backupFile
+                                )
+
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Meu Financeiro - Backup JSON")
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+
+                                context.startActivity(
+                                    android.content.Intent.createChooser(shareIntent, "Compartilhar Backup JSON")
+                                )
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Exportar Tudo (Backup JSON)")
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Fechar")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ClearDataDialog(
+    onDismiss: () -> Unit,
+    onConfirmClear: () -> Unit
+) {
+    var confirmationInput by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.DeleteForever,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Limpar Todos os Dados",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Atenção: esta ação é irreversível. Todas as suas contas, transações, categorias, subcategorias, metas e planejamentos serão apagados do seu dispositivo local.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Para confirmar, digite 'LIMPAR' no campo abaixo:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = confirmationInput,
+                    onValueChange = { confirmationInput = it },
+                    singleLine = true,
+                    placeholder = { Text("LIMPAR") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmClear,
+                enabled = confirmationInput.trim().equals("LIMPAR", ignoreCase = true),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text("Apagar Tudo")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+fun SecuritySettingsDialog(
+    viewModel: MainViewModel,
+    onDismiss: () -> Unit
+) {
     val securityEnabled by viewModel.securityEnabled.collectAsStateWithLifecycle()
     val authMethod by viewModel.authMethod.collectAsStateWithLifecycle()
     val isBiometricAvailable = remember { viewModel.isBiometricAvailable() }
@@ -1988,188 +2564,136 @@ fun SecuritySettingsCard(
         )
     }
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Segurança e Acesso",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (securityEnabled) "Proteção ativa (${if (authMethod == "BIOMETRIC") "Biometria" else "PIN"})" else "Proteção desativada",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (securityEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Segurança e Acesso", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
                     }
                 }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null
-                )
-            }
 
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Main Protection Toggle
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Proteger com senha/biometria", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Exige autenticação ao abrir o aplicativo", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = securityEnabled,
+                        onCheckedChange = { enable ->
+                            if (enable) {
+                                if (!viewModel.securityManager.hasPin()) {
+                                    showPinSetupDialog = true
+                                } else {
+                                    viewModel.setSecurityEnabled(true)
+                                }
+                            } else {
+                                viewModel.setSecurityEnabled(false)
+                            }
+                        }
+                    )
+                }
+
+                if (securityEnabled) {
+                    HorizontalDivider()
+
+                    Text("Método de Autenticação", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (!viewModel.securityManager.hasPin()) {
+                                    pendingAuthMethodSelection = "PIN"
+                                    showPinSetupDialog = true
+                                } else {
+                                    viewModel.setAuthMethod("PIN")
+                                }
+                            }
+                            .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Proteger com senha/biometria",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Exige autenticação ao abrir o aplicativo. Salvo localmente neste aparelho.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = securityEnabled,
-                            onCheckedChange = { enable ->
-                                if (enable) {
-                                    if (!viewModel.securityManager.hasPin()) {
-                                        showPinSetupDialog = true
-                                    } else {
-                                        viewModel.setSecurityEnabled(true)
-                                    }
+                        RadioButton(
+                            selected = authMethod == "PIN",
+                            onClick = {
+                                if (!viewModel.securityManager.hasPin()) {
+                                    pendingAuthMethodSelection = "PIN"
+                                    showPinSetupDialog = true
                                 } else {
-                                    viewModel.setSecurityEnabled(false)
+                                    viewModel.setAuthMethod("PIN")
                                 }
                             }
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("PIN de 4-6 dígitos", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    if (securityEnabled) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-                        // Method selection
-                        Text(
-                            text = "Método de Autenticação",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        // Option 1: PIN
+                    if (isBiometricAvailable) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (authMethod == "PIN") MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                    else Color.Transparent
-                                )
                                 .clickable {
                                     if (!viewModel.securityManager.hasPin()) {
-                                        pendingAuthMethodSelection = "PIN"
+                                        pendingAuthMethodSelection = "BIOMETRIC"
                                         showPinSetupDialog = true
                                     } else {
-                                        viewModel.setAuthMethod("PIN")
+                                        viewModel.setAuthMethod("BIOMETRIC")
                                     }
                                 }
-                                .padding(12.dp),
+                                .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
-                                selected = authMethod == "PIN",
+                                selected = authMethod == "BIOMETRIC",
                                 onClick = {
                                     if (!viewModel.securityManager.hasPin()) {
-                                        pendingAuthMethodSelection = "PIN"
+                                        pendingAuthMethodSelection = "BIOMETRIC"
                                         showPinSetupDialog = true
                                     } else {
-                                        viewModel.setAuthMethod("PIN")
+                                        viewModel.setAuthMethod("BIOMETRIC")
                                     }
                                 }
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Default.Pin, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text("PIN de 4-6 dígitos", fontWeight = FontWeight.SemiBold)
-                                Text("Digite uma senha numérica para desbloquear", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-
-                        // Option 2: Biometrics (Only shown if available on device)
-                        if (isBiometricAvailable) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (authMethod == "BIOMETRIC") MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                        else Color.Transparent
-                                    )
-                                    .clickable {
-                                        if (!viewModel.securityManager.hasPin()) {
-                                            pendingAuthMethodSelection = "BIOMETRIC"
-                                            showPinSetupDialog = true
-                                        } else {
-                                            viewModel.setAuthMethod("BIOMETRIC")
-                                        }
-                                    }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = authMethod == "BIOMETRIC",
-                                    onClick = {
-                                        if (!viewModel.securityManager.hasPin()) {
-                                            pendingAuthMethodSelection = "BIOMETRIC"
-                                            showPinSetupDialog = true
-                                        } else {
-                                            viewModel.setAuthMethod("BIOMETRIC")
-                                        }
-                                    }
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(Icons.Default.Fingerprint, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text("Biometria do Aparelho (Digital/Face)", fontWeight = FontWeight.SemiBold)
-                                    Text("Usa os sensores nativos do sistema operacional", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        // Change PIN Button
-                        OutlinedButton(
-                            onClick = { showPinSetupDialog = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.LockReset, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (viewModel.securityManager.hasPin()) "Alterar PIN de Acesso" else "Cadastrar PIN de Acesso")
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Biometria do Aparelho", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
+
+                    OutlinedButton(
+                        onClick = { showPinSetupDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.LockReset, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (viewModel.securityManager.hasPin()) "Alterar PIN" else "Cadastrar PIN")
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Concluído")
                 }
             }
         }
@@ -2177,79 +2701,101 @@ fun SecuritySettingsCard(
 }
 
 @Composable
-fun PinSetupDialog(
-    isChange: Boolean,
-    onDismiss: () -> Unit,
-    onSavePin: (String) -> Unit
+fun HelpCenterDialog(
+    onDismiss: () -> Unit
 ) {
-    var createPin by remember { mutableStateOf("") }
-    var confirmPin by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Central de Ajuda & FAQ", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    }
+                }
 
+                FaqItem(
+                    question = "Como funciona o 'Pronto para Atribuir'?",
+                    answer = "É o valor total de receitas e saldos acumulados ainda não alocados em envelopes de categorias ou metas."
+                )
+
+                FaqItem(
+                    question = "O que são Transações Recorrentes?",
+                    answer = "São despesas ou receitas fixas (como aluguel, salários ou assinaturas) que ocorrem mensalmente."
+                )
+
+                FaqItem(
+                    question = "Meus dados estão seguros?",
+                    answer = "Sim. Os dados são salvos localmente no banco Room e sincronizados com criptografia no Firebase Firestore."
+                )
+
+                FaqItem(
+                    question = "Como exportar meus relatórios?",
+                    answer = "Em Ajustes -> Dados e backup -> Exportar dados, você pode gerar relatórios em JSON, CSV ou PDF."
+                )
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Entendi")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FaqItem(question: String, answer: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(text = question, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text(text = answer, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun LogoutConfirmationDialog(
+    onDismiss: () -> Unit,
+    onConfirmLogout: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (isChange) "Alterar PIN de Acesso" else "Cadastrar PIN de Acesso", fontWeight = FontWeight.Bold)
+            Text(
+                text = "Sair da Conta",
+                fontWeight = FontWeight.Bold
+            )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    text = "O PIN deve conter entre 4 e 6 dígitos numéricos.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                OutlinedTextField(
-                    value = createPin,
-                    onValueChange = { input ->
-                        if (input.all { it.isDigit() } && input.length <= 6) {
-                            createPin = input
-                            errorMessage = null
-                        }
-                    },
-                    label = { Text("Criar PIN (4-6 dígitos)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = confirmPin,
-                    onValueChange = { input ->
-                        if (input.all { it.isDigit() } && input.length <= 6) {
-                            confirmPin = input
-                            errorMessage = null
-                        }
-                    },
-                    label = { Text("Confirmar PIN") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (errorMessage != null) {
-                    Text(
-                        text = errorMessage!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+            Text(
+                text = "Deseja realmente encerrar a sessão? Seus dados sincronizados na nuvem ou locais permanecerão salvos com segurança.",
+                fontSize = 13.sp
+            )
         },
         confirmButton = {
             Button(
-                onClick = {
-                    if (createPin.length !in 4..6) {
-                        errorMessage = "O PIN deve ter entre 4 e 6 dígitos."
-                    } else if (createPin != confirmPin) {
-                        errorMessage = "Os dois PINs digitados não coincidem."
-                    } else {
-                        onSavePin(createPin)
-                    }
-                }
+                onClick = onConfirmLogout,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
             ) {
-                Text("Salvar PIN")
+                Text("Sair")
             }
         },
         dismissButton = {

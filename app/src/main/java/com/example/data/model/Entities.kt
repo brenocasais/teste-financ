@@ -19,8 +19,7 @@ data class Category(
     val name: String,
     val archived: Boolean = false,
     val userId: String = "",
-    val icon: String? = null,
-    val budget_rule_type: String? = null // NECESSIDADE, DESEJO, POUPANCA
+    val icon: String? = null
 )
 
 @Entity(tableName = "subcategories")

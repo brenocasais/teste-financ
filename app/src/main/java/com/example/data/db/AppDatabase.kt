@@ -50,6 +50,29 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Remove budget_rule_type column from categories table while preserving all existing data
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `categories_new` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `name` TEXT NOT NULL,
+                `archived` INTEGER NOT NULL,
+                `userId` TEXT NOT NULL,
+                `icon` TEXT
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            INSERT INTO `categories_new` (`id`, `name`, `archived`, `userId`, `icon`)
+            SELECT `id`, `name`, `archived`, `userId`, `icon` FROM `categories`
+        """.trimIndent())
+
+        db.execSQL("DROP TABLE `categories` ")
+        db.execSQL("ALTER TABLE `categories_new` RENAME TO `categories` ")
+    }
+}
+
 @Database(
     entities = [
         Account::class,
@@ -63,7 +86,7 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
         Goal::class,
         NotificationLog::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -89,7 +112,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "meu_financeiro_database"
                 )
-                .addMigrations(MIGRATION_9_10)
+                .addMigrations(MIGRATION_9_10, MIGRATION_10_11)
                 .build()
                 INSTANCE = instance
                 instance

@@ -874,7 +874,6 @@ fun CategoryFormDialog(
 ) {
     var name by remember { mutableStateOf(category?.name ?: "") }
     var icon by remember { mutableStateOf(category?.icon ?: "") }
-    var budgetRuleType by remember { mutableStateOf<String?>(category?.budget_rule_type) }
     var subcategoryName by remember { mutableStateOf("") }
 
     val commonEmojis = remember {
@@ -934,31 +933,6 @@ fun CategoryFormDialog(
                     }
                 }
 
-                // 50/30/20 Budget Rule Type Selector
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Regra de Orçamento (50/30/20)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                    ) {
-                        val rules = listOf(
-                            null to "Padrão",
-                            "NECESSIDADE" to "Necessidade",
-                            "DESEJO" to "Desejo",
-                            "POUPANCA" to "Poupança"
-                        )
-                        rules.forEach { (type, label) ->
-                            FilterChip(
-                                selected = budgetRuleType == type,
-                                onClick = { budgetRuleType = type },
-                                label = { Text(label, fontSize = 11.5.sp) }
-                            )
-                        }
-                    }
-                }
-
                 if (category == null) {
                     OutlinedTextField(
                         value = subcategoryName,
@@ -980,12 +954,10 @@ fun CategoryFormDialog(
                             val iconVal = icon.trim().ifEmpty { null }
                             val targetCat = category?.copy(
                                 name = name,
-                                icon = iconVal,
-                                budget_rule_type = budgetRuleType
+                                icon = iconVal
                             ) ?: Category(
                                 name = name,
-                                icon = iconVal,
-                                budget_rule_type = budgetRuleType
+                                icon = iconVal
                             )
                             onSave(targetCat, subcategoryName)
                         },
@@ -2013,15 +1985,6 @@ fun CategoriesCrudDialog(
                             Column(modifier = Modifier.weight(1f)) {
                                 val displayName = if (!cat.icon.isNullOrBlank()) "${cat.icon} ${cat.name}" else cat.name
                                 Text(displayName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                if (!cat.budget_rule_type.isNullOrBlank()) {
-                                    val ruleLabel = when(cat.budget_rule_type) {
-                                        "NECESSIDADE" -> "Necessidade (50%)"
-                                        "DESEJO" -> "Desejo (30%)"
-                                        "POUPANCA" -> "Poupança (20%)"
-                                        else -> cat.budget_rule_type
-                                    }
-                                    Text(ruleLabel, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-                                }
                             }
                             Row {
                                 IconButton(onClick = { onEditCategory(cat) }) {

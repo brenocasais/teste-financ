@@ -656,8 +656,7 @@ class FinanceRepository(
         "id" to id,
         "name" to name,
         "archived" to archived,
-        "icon" to icon,
-        "budget_rule_type" to budget_rule_type
+        "icon" to icon
     )
 
     private fun categoryFromMap(map: Map<String, Any?>, userId: String): Category = Category(
@@ -665,8 +664,7 @@ class FinanceRepository(
         name = map["name"] as? String ?: "",
         archived = map["archived"] as? Boolean ?: false,
         userId = userId,
-        icon = map["icon"] as? String,
-        budget_rule_type = map["budget_rule_type"] as? String
+        icon = map["icon"] as? String
     )
 
     private fun Subcategory.toMap(): Map<String, Any?> = mapOf(

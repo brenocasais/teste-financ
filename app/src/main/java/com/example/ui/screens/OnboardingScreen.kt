@@ -482,7 +482,7 @@ fun IncomeStep(
             color = MaterialTheme.colorScheme.primary
         )
         Text(
-            text = "A renda é usada para comparar com suas alocações de orçamento seguindo a regra 50/30/20.",
+            text = "A renda é usada para comparar com suas alocações de orçamento e planejar seus gastos mensais.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,

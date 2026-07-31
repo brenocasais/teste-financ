@@ -339,7 +339,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 obj.put("name", it.name)
                 obj.put("archived", it.archived)
                 obj.put("icon", it.icon ?: org.json.JSONObject.NULL)
-                obj.put("budget_rule_type", it.budget_rule_type ?: org.json.JSONObject.NULL)
                 categoriesArr.put(obj)
             }
             root.put("categories", categoriesArr)

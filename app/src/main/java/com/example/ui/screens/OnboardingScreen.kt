@@ -23,9 +23,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.Account
 import com.example.data.model.Category
 import com.example.data.model.Subcategory
+import com.example.ui.components.CategoryTemplateSelection
+import com.example.ui.components.CategoryTemplateSelectorContent
 import com.example.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
@@ -40,44 +43,15 @@ fun OnboardingScreen(
     val scope = rememberCoroutineScope()
     val userId = viewModel.currentUserId
 
+    val categories by viewModel.repository.getCategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val subcategories by viewModel.repository.getSubcategoriesFlow(userId).collectAsStateWithLifecycle(initialValue = emptyList())
+
     // Temporary list of accounts during onboarding
     val tempAccounts = remember { mutableStateListOf<Account>() }
     var showAddAccountDialog by remember { mutableStateOf(false) }
 
     // Temporary income configuration
     var monthlyIncome by remember { mutableStateOf("") }
-
-    // Helper function to insert the pre-filled categories & subcategories
-    fun insertTemplateEnvelopes() {
-        scope.launch {
-            val db = viewModel.repository
-            // Necessidades
-            val id1 = db.insertCategory(
-                Category(name = "Necessidades", userId = userId)
-            ).toInt()
-            db.insertSubcategory(Subcategory(category_id = id1, name = "Aluguel / Prestação", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id1, name = "Energia / Água / Gás", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id1, name = "Internet / Celular", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id1, name = "Alimentação / Supermercado", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id1, name = "Transporte / Combustível", userId = userId))
-
-            // Desejos
-            val id2 = db.insertCategory(
-                Category(name = "Desejos", userId = userId)
-            ).toInt()
-            db.insertSubcategory(Subcategory(category_id = id2, name = "Lazer / Passeios", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id2, name = "Restaurantes / Delivery", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id2, name = "Compras / Vestuário", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id2, name = "Assinaturas / Streaming", userId = userId))
-
-            // Poupança
-            val id3 = db.insertCategory(
-                Category(name = "Poupança", userId = userId)
-            ).toInt()
-            db.insertSubcategory(Subcategory(category_id = id3, name = "Reserva de Emergência", userId = userId))
-            db.insertSubcategory(Subcategory(category_id = id3, name = "Investimentos", userId = userId))
-        }
-    }
 
     // Save final accounts configured
     fun saveAccounts() {
@@ -167,9 +141,12 @@ fun OnboardingScreen(
                             onNext = { currentStep++ }
                         )
                         4 -> EnvelopesStep(
-                            onUseTemplate = {
-                                insertTemplateEnvelopes()
-                                currentStep++
+                            existingCategories = categories,
+                            existingSubcategories = subcategories,
+                            onConfirm = { selections ->
+                                viewModel.insertCategoryTemplates(selections) {
+                                    currentStep++
+                                }
                             },
                             onNext = { currentStep++ }
                         )
@@ -518,112 +495,21 @@ fun IncomeStep(
 // STEP 4: Envelopes Template
 @Composable
 fun EnvelopesStep(
-    onUseTemplate: () -> Unit,
+    existingCategories: List<Category>,
+    existingSubcategories: List<Subcategory>,
+    onConfirm: (List<CategoryTemplateSelection>) -> Unit,
     onNext: () -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Criar seus Envelopes Orçamentários",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = "Envelopes são grupos que reúnem suas categorias de custos. Oferecemos um template excelente e pronto baseado nas melhores práticas financeiras:",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    Text(
-                        text = "1. Necessidades (Fixas & Essenciais)",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "Aluguel, Água/Energia, Internet, Supermercado, Transporte.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
-                    )
-                }
-
-                item {
-                    Text(
-                        text = "2. Desejos (Variáveis & Conforto)",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "Lazer, Restaurantes/Delivery, Compras, Assinaturas.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
-                    )
-                }
-
-                item {
-                    Text(
-                        text = "3. Poupança (Investimento & Segurança)",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "Reserva de Emergência, Investimentos de Longo Prazo.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = onUseTemplate,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text("Importar Template Pronto", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedButton(
-            onClick = onNext,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text("Criar Envelopes do Zero", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        }
-    }
+    CategoryTemplateSelectorContent(
+        existingCategories = existingCategories,
+        existingSubcategories = existingSubcategories,
+        titleText = "Criar suas Categorias",
+        subtitleText = "Oferecemos um modelo sugerido com 14 categorias e 47 subcategorias. Selecione as que deseja criar:",
+        confirmButtonText = "Criar categorias selecionadas",
+        onConfirm = onConfirm,
+        onSkip = onNext,
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 // STEP 5: First Allocation

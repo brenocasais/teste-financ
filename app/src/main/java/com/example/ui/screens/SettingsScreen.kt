@@ -39,6 +39,7 @@ import com.example.data.model.Account
 import com.example.data.model.Category
 import com.example.data.model.RecurrenceRule
 import com.example.data.model.Subcategory
+import com.example.ui.components.CategoryTemplateSelectorDialog
 import com.example.ui.viewmodel.MainViewModel
 import com.example.utils.ExportHelper
 import kotlinx.coroutines.launch
@@ -538,6 +539,7 @@ fun SettingsScreen(
                 categories = categories,
                 subcategories = subcategories,
                 onDismiss = { activeDialog = null },
+                onOpenTemplateSelector = { activeDialog = SettingsDialog.CategoryTemplateSelector },
                 onAddCategory = { activeDialog = SettingsDialog.AddCategory },
                 onEditCategory = { cat -> activeDialog = SettingsDialog.EditCategory(cat) },
                 onDeleteCategory = { cat ->
@@ -552,6 +554,18 @@ fun SettingsScreen(
                     scope.launch {
                         viewModel.repository.deleteSubcategory(sub)
                         viewModel.triggerPush()
+                    }
+                }
+            )
+        }
+        SettingsDialog.CategoryTemplateSelector -> {
+            CategoryTemplateSelectorDialog(
+                existingCategories = categories,
+                existingSubcategories = subcategories,
+                onDismiss = { activeDialog = SettingsDialog.CategoriesCrud },
+                onConfirm = { selections ->
+                    viewModel.insertCategoryTemplates(selections) {
+                        activeDialog = SettingsDialog.CategoriesCrud
                     }
                 }
             )
@@ -681,6 +695,7 @@ sealed class SettingsDialog {
     data class EditRecurrenceRule(val rule: RecurrenceRule) : SettingsDialog()
     object AccountsCrud : SettingsDialog()
     object CategoriesCrud : SettingsDialog()
+    object CategoryTemplateSelector : SettingsDialog()
     object SyncSettings : SettingsDialog()
     object ExportData : SettingsDialog()
     object ClearData : SettingsDialog()
@@ -1924,6 +1939,7 @@ fun CategoriesCrudDialog(
     categories: List<Category>,
     subcategories: List<Subcategory>,
     onDismiss: () -> Unit,
+    onOpenTemplateSelector: () -> Unit,
     onAddCategory: () -> Unit,
     onEditCategory: (Category) -> Unit,
     onDeleteCategory: (Category) -> Unit,
@@ -1954,6 +1970,16 @@ fun CategoriesCrudDialog(
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Fechar")
                     }
+                }
+
+                OutlinedButton(
+                    onClick = onOpenTemplateSelector,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Adicionar do modelo sugerido", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
 
                 // Category Section

@@ -17,6 +17,7 @@ import com.example.data.model.AllocationMovement
 import com.example.data.model.Goal
 import com.example.data.model.InstallmentPlan
 import com.example.data.model.RecurrenceRule
+import com.example.ui.components.CategoryTemplateSelection
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -716,6 +717,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val id = repository.insertSubcategory(subcategory)
             triggerPush()
             onComplete(id.toInt())
+        }
+    }
+
+    fun insertCategoryTemplates(
+        selections: List<CategoryTemplateSelection>,
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val userId = currentUserId
+            val existingCats = repository.getAllCategories(userId)
+            val existingSubs = repository.getAllSubcategories(userId)
+
+            for (sel in selections) {
+                val catName = sel.category.name.trim()
+                val catIcon = sel.category.icon
+                val existingCat = existingCats.firstOrNull { it.name.trim().equals(catName, ignoreCase = true) }
+
+                val catId = if (existingCat != null) {
+                    existingCat.id
+                } else {
+                    val newCat = Category(name = catName, icon = catIcon, userId = userId)
+                    repository.insertCategory(newCat).toInt()
+                }
+
+                val currentSubsForCat = existingSubs.filter { it.category_id == catId }
+                for (sub in sel.selectedSubcategories) {
+                    val subName = sub.name.trim()
+                    if (!currentSubsForCat.any { it.name.trim().equals(subName, ignoreCase = true) }) {
+                        repository.insertSubcategory(
+                            Subcategory(category_id = catId, name = subName, icon = sub.icon, userId = userId)
+                        )
+                    }
+                }
+            }
+            triggerPush()
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
         }
     }
 

@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.*
 import com.example.ui.viewmodel.MainViewModel
+import com.example.ui.components.StandardScreenHeader
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -83,6 +84,7 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
     
     var showStartPicker by remember { mutableStateOf(false) }
     var showEndPicker by remember { mutableStateOf(false) }
+    var showMonthPicker by remember { mutableStateOf(false) }
 
     // Calculate active date range (startMonthStr and endMonthStr)
     val (startMonthStr, endMonthStr) = remember(selectedPeriodType, customStartCal, customEndCal, selectedMonthCalendar) {
@@ -633,91 +635,20 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(vertical = 12.dp)
     ) {
-        // Title heading with compact period selector
+        // Title heading with StandardScreenHeader
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Métricas",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
-
-                // Compact period selector with left/right arrows
-                val periodDisplayText = remember(selectedPeriodType, selectedMonthCalendar, customStartCal, customEndCal) {
-                    when (selectedPeriodType) {
-                        "MÊS" -> displaySdf.format(selectedMonthCalendar.time).replaceFirstChar { it.uppercase() }
-                        else -> "${formatMonthPortuguese(startMonthStr)} - ${formatMonthPortuguese(endMonthStr)}"
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier
-                        .background(cardBgColor, RoundedCornerShape(20.dp))
-                        .border(1.dp, borderColor, RoundedCornerShape(20.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    IconButton(
-                        onClick = {
-                            when (selectedPeriodType) {
-                                "MÊS" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, -1) })
-                                "TRIMESTRE" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, -3) })
-                                "ANO" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.YEAR, -1) })
-                                "CUSTOMIZADO" -> {
-                                    customStartCal = (customStartCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
-                                    customEndCal = (customEndCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
-                                }
-                            }
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ChevronLeft,
-                            contentDescription = "Anterior",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    Text(
-                        text = periodDisplayText,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = primaryTextColor,
-                        modifier = Modifier.padding(horizontal = 2.dp)
-                    )
-
-                    IconButton(
-                        onClick = {
-                            when (selectedPeriodType) {
-                                "MÊS" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, 1) })
-                                "TRIMESTRE" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.MONTH, 3) })
-                                "ANO" -> viewModel.setSelectedMonth((selectedMonthCalendar.clone() as Calendar).apply { add(Calendar.YEAR, 1) })
-                                "CUSTOMIZADO" -> {
-                                    customStartCal = (customStartCal.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
-                                    customEndCal = (customEndCal.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
-                                }
-                            }
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = "Próximo",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+            val periodDisplayText = remember(selectedPeriodType, selectedMonthCalendar, customStartCal, customEndCal) {
+                when (selectedPeriodType) {
+                    "MÊS" -> displaySdf.format(selectedMonthCalendar.time).replaceFirstChar { it.uppercase() }
+                    else -> "${formatMonthPortuguese(startMonthStr)} - ${formatMonthPortuguese(endMonthStr)}"
                 }
             }
+
+            StandardScreenHeader(
+                title = "Métricas",
+                periodString = periodDisplayText,
+                onMonthClick = { showMonthPicker = true }
+            )
         }
 
         // Period Chips
@@ -1834,6 +1765,20 @@ fun MetricsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     set(Calendar.MONTH, month)
                 }
                 showStartPicker = false
+            }
+        )
+    }
+
+    if (showMonthPicker) {
+        MonthYearPickerDialog(
+            currentCalendar = selectedMonthCalendar,
+            onDismiss = { showMonthPicker = false },
+            onSelected = { year, month ->
+                val cal = selectedMonthCalendar.clone() as Calendar
+                cal.set(Calendar.YEAR, year)
+                cal.set(Calendar.MONTH, month)
+                viewModel.setSelectedMonth(cal)
+                showMonthPicker = false
             }
         )
     }

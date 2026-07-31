@@ -41,6 +41,7 @@ import com.example.data.model.Category
 import com.example.data.model.Subcategory
 import com.example.data.model.BudgetAllocation
 import com.example.ui.viewmodel.MainViewModel
+import com.example.ui.components.StandardScreenHeader
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -122,44 +123,12 @@ fun GoalsScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     .fillMaxSize()
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
-                // Header: Title "Metas" + Compact Month Selector on top right
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Metas",
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor
-                    )
-
-                    // Seletor compacto do mês (sem card grande)
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { showMonthPickerHeader = true }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = displayMonthStr,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = primaryTextColor
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Selecionar mês",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
+                // Header: StandardScreenHeader
+                StandardScreenHeader(
+                    title = "Metas",
+                    periodString = displayMonthStr,
+                    onMonthClick = { showMonthPickerHeader = true }
+                )
 
                 // Card de Resumo
                 val totalSaved = goalBalances.values.sum()

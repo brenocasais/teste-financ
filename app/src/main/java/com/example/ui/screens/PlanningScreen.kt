@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import com.example.ui.components.StandardScreenHeader
 import com.example.data.model.Account
 import com.example.data.model.AllocationMovement
 import com.example.data.model.BudgetAllocation
@@ -561,43 +564,12 @@ fun PlanningScreen(viewModel: MainViewModel) {
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Header (Título "Planejamento" + Month selector compacto "Julho 2026")
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp, bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Planejamento",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { showMonthPicker = true }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = monthNameStr,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryTextColor
-                        )
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Selecionar Mês",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+                // Header (StandardScreenHeader)
+                StandardScreenHeader(
+                    title = "Planejamento",
+                    periodString = monthNameStr,
+                    onMonthClick = { showMonthPicker = true }
+                )
 
                 if (showClosureBanner) {
                     MonthClosureBanner(
@@ -956,7 +928,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
 
                                         if (isCatExpanded) {
                                             if (subsInCat.isEmpty()) {
-                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = "Nenhuma subcategoria.",
                                                     fontSize = 12.sp,
@@ -964,7 +936,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                     modifier = Modifier.padding(start = 52.dp)
                                                 )
                                             } else {
-                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Spacer(modifier = Modifier.height(6.dp))
                                                 subsInCat.forEachIndexed { index, sub ->
                                                     val isActionPanelExpanded = expandedActionPanelId == "sub_${sub.id}"
                                                     val isFirst = index == 0
@@ -1040,7 +1012,7 @@ fun PlanningScreen(viewModel: MainViewModel) {
                                                     }
 
                                                     if (!isLast) {
-                                                        Spacer(modifier = Modifier.height(10.dp))
+                                                        Spacer(modifier = Modifier.height(4.dp))
                                                     }
                                                 }
                                             }
@@ -2462,8 +2434,9 @@ fun SubcategoryRowItem(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             shape = RoundedCornerShape(8.dp)
                         )
-                        .padding(vertical = 1.dp, horizontal = 1.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 1.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(

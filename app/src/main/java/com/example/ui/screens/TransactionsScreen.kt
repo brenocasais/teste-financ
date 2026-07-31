@@ -41,6 +41,7 @@ import com.example.data.model.Transaction
 import com.example.data.model.InstallmentPlan
 import com.example.data.model.Goal
 import com.example.ui.viewmodel.MainViewModel
+import com.example.ui.components.StandardScreenHeader
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.launch
@@ -267,47 +268,11 @@ fun TransactionsScreen(
                 .padding(horizontal = 10.dp, vertical = 10.dp)
         ) {
             // === 1. CABEÇALHO ===
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp, start = 4.dp, end = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Transações",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
-
-                // Seletor compacto de mês
-                Surface(
-                    onClick = { showMonthPicker = true },
-                    shape = RoundedCornerShape(10.dp),
-                    color = cardBgColor,
-                    border = BorderStroke(1.dp, cardBorderColor)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = periodString,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryTextColor
-                        )
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Selecionar Mês",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
+            StandardScreenHeader(
+                title = "Transações",
+                periodString = periodString,
+                onMonthClick = { showMonthPicker = true }
+            )
 
             // Highlighting banner if applicable
             if (highlightedTransaction != null) {
@@ -1605,7 +1570,8 @@ fun TransactionAddEditDialog(
                 .wrapContentHeight()
                 .padding(16.dp),
             shape = RoundedCornerShape(24.dp),
-            tonalElevation = 6.dp
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp
         ) {
             Column(
                 modifier = Modifier

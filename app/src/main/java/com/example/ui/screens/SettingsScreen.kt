@@ -540,6 +540,18 @@ fun SettingsScreen(
                 subcategories = subcategories,
                 onDismiss = { activeDialog = null },
                 onOpenTemplateSelector = { activeDialog = SettingsDialog.CategoryTemplateSelector },
+                onToggleArchiveCategory = { cat ->
+                    scope.launch {
+                        viewModel.repository.updateCategory(cat.copy(archived = !cat.archived, userId = userId))
+                        viewModel.triggerPush()
+                    }
+                },
+                onToggleArchiveSubcategory = { sub ->
+                    scope.launch {
+                        viewModel.repository.updateSubcategory(sub.copy(archived = !sub.archived, userId = userId))
+                        viewModel.triggerPush()
+                    }
+                },
                 onAddCategory = { activeDialog = SettingsDialog.AddCategory },
                 onEditCategory = { cat -> activeDialog = SettingsDialog.EditCategory(cat) },
                 onDeleteCategory = { cat ->
@@ -1056,7 +1068,7 @@ fun SubcategoryFormDialog(
 
                 Text("Categoria Pai", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Column {
-                    categories.forEach { cat ->
+                    categories.filter { !it.archived || it.id == selectedCatId }.forEach { cat ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -1940,6 +1952,8 @@ fun CategoriesCrudDialog(
     subcategories: List<Subcategory>,
     onDismiss: () -> Unit,
     onOpenTemplateSelector: () -> Unit,
+    onToggleArchiveCategory: (Category) -> Unit,
+    onToggleArchiveSubcategory: (Subcategory) -> Unit,
     onAddCategory: () -> Unit,
     onEditCategory: (Category) -> Unit,
     onDeleteCategory: (Category) -> Unit,
@@ -2000,24 +2014,59 @@ fun CategoriesCrudDialog(
                     Text("Nenhuma categoria criada.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                 } else {
                     categories.forEach { cat ->
+                        val isArchived = cat.archived
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isArchived) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    RoundedCornerShape(8.dp)
+                                )
                                 .padding(8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                val displayName = if (!cat.icon.isNullOrBlank()) "${cat.icon} ${cat.name}" else cat.name
-                                Text(displayName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val displayName = if (!cat.icon.isNullOrBlank()) "${cat.icon} ${cat.name}" else cat.name
+                                    Text(
+                                        displayName,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp,
+                                        color = if (isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isArchived) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                "Arquivada",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                            Row {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onToggleArchiveCategory(cat) }) {
+                                    Icon(
+                                        imageVector = if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                                        contentDescription = if (isArchived) "Desarquivar" else "Arquivar",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = if (isArchived) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 IconButton(onClick = { onEditCategory(cat) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.Edit, contentDescription = "Editar", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
                                 IconButton(onClick = { onDeleteCategory(cat) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                    Icon(Icons.Default.Delete, contentDescription = "Excluir", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -2044,26 +2093,61 @@ fun CategoriesCrudDialog(
                     Text("Nenhuma subcategoria criada.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                 } else {
                     subcategories.forEach { sub ->
+                        val isArchived = sub.archived
                         val catName = categories.find { it.id == sub.category_id }?.name ?: "Sem categoria"
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isArchived) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                    RoundedCornerShape(8.dp)
+                                )
                                 .padding(8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                val subDisplayName = if (!sub.icon.isNullOrBlank()) "${sub.icon} ${sub.name}" else sub.name
-                                Text(subDisplayName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text("Categoria: $catName", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val subDisplayName = if (!sub.icon.isNullOrBlank()) "${sub.icon} ${sub.name}" else sub.name
+                                    Text(
+                                        subDisplayName,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp,
+                                        color = if (isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isArchived) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                "Arquivada",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Text("Categoria: $catName", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                             }
-                            Row {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onToggleArchiveSubcategory(sub) }) {
+                                    Icon(
+                                        imageVector = if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                                        contentDescription = if (isArchived) "Desarquivar" else "Arquivar",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = if (isArchived) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 IconButton(onClick = { onEditSubcategory(sub) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.Edit, contentDescription = "Editar", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
                                 IconButton(onClick = { onDeleteSubcategory(sub) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                    Icon(Icons.Default.Delete, contentDescription = "Excluir", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }

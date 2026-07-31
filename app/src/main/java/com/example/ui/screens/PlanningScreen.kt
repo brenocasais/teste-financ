@@ -272,13 +272,23 @@ fun PlanningScreen(viewModel: MainViewModel) {
     // Active expanded categories inside the tree
     var expandedCategoryIds by remember { mutableStateOf(setOf<Int>()) }
 
+    val activeOrAllocatedCategories by remember(categories, budgetAllocationsInMonth, spentInfoMap) {
+        derivedStateOf {
+            categories.filter { cat ->
+                !cat.archived ||
+                budgetAllocationsInMonth.any { it.category_id == cat.id } ||
+                spentInfoMap.keys.any { it.first == cat.id }
+            }
+        }
+    }
+
     var searchQuery by remember { mutableStateOf("") }
-    val filteredCategories by remember(categories, subcategories, searchQuery) {
+    val filteredCategories by remember(activeOrAllocatedCategories, subcategories, searchQuery) {
         derivedStateOf {
             if (searchQuery.isBlank()) {
-                categories
+                activeOrAllocatedCategories
             } else {
-                categories.filter { cat ->
+                activeOrAllocatedCategories.filter { cat ->
                     cat.name.contains(searchQuery, ignoreCase = true) ||
                     subcategories.any { sub -> sub.category_id == cat.id && sub.name.contains(searchQuery, ignoreCase = true) }
                 }
@@ -860,16 +870,23 @@ fun PlanningScreen(viewModel: MainViewModel) {
                         ) {
                             items(filteredCategoriesByState, key = { "cat_${it.id}" }) { cat ->
                                 val isCatExpanded = if (searchQuery.isNotEmpty()) true else expandedCategoryIds.contains(cat.id)
+                                val activeOrAllocatedSubcategories = remember(subcategories, cat, budgetAllocationsInMonth, spentInfoMap) {
+                                    subcategories.filter { sub ->
+                                        sub.category_id == cat.id && (
+                                            !sub.archived ||
+                                            budgetAllocationsInMonth.any { it.subcategory_id == sub.id } ||
+                                            spentInfoMap.keys.any { it.first == cat.id && it.second == sub.id }
+                                        )
+                                    }
+                                }
                                 val subsInCat = if (cat.id == -999) {
                                     virtualGoalSubcategories
                                 } else if (searchQuery.isEmpty()) {
-                                    subcategories.filter { it.category_id == cat.id }
+                                    activeOrAllocatedSubcategories
                                 } else {
-                                    subcategories.filter { sub ->
-                                        sub.category_id == cat.id && (
-                                            cat.name.contains(searchQuery, ignoreCase = true) ||
-                                            sub.name.contains(searchQuery, ignoreCase = true)
-                                        )
+                                    activeOrAllocatedSubcategories.filter { sub ->
+                                        cat.name.contains(searchQuery, ignoreCase = true) ||
+                                        sub.name.contains(searchQuery, ignoreCase = true)
                                     }
                                 }
 
@@ -2700,7 +2717,7 @@ fun DistributeDialog(
                                     onDismissRequest = { showSourceDropdown = false },
                                     modifier = Modifier.fillMaxWidth(0.85f).heightIn(max = 250.dp)
                                 ) {
-                                    categories.forEach { cat ->
+                                    categories.filter { !it.archived || it.id == sourceCategory?.id }.forEach { cat ->
                                         val catSobra = sourceLeftovers[Pair(cat.id, null)] ?: 0.0
                                         val statusText = if (catSobra >= 0) "Sobra: ${currencyFormatter.format(catSobra)}" else "Falta: ${currencyFormatter.format(catSobra)}"
                                         DropdownMenuItem(
@@ -2712,7 +2729,7 @@ fun DistributeDialog(
                                             }
                                         )
 
-                                        val subs = subcategories.filter { it.category_id == cat.id }
+                                        val subs = subcategories.filter { it.category_id == cat.id && (!it.archived || it.id == sourceSubcategory?.id) }
                                         subs.forEach { sub ->
                                             val subSobra = sourceLeftovers[Pair(cat.id, sub.id)] ?: 0.0
                                             val subStatusText = if (subSobra >= 0) "Sobra: ${currencyFormatter.format(subSobra)}" else "Falta: ${currencyFormatter.format(subSobra)}"
@@ -2815,7 +2832,7 @@ fun DistributeDialog(
                                     onDismissRequest = { showDestDropdown = false },
                                     modifier = Modifier.fillMaxWidth(0.85f).heightIn(max = 250.dp)
                                 ) {
-                                    categories.forEach { cat ->
+                                    categories.filter { !it.archived || it.id == destCategory?.id }.forEach { cat ->
                                         val catSobra = destLeftovers[Pair(cat.id, null)] ?: 0.0
                                         val statusText = if (catSobra >= 0) "Sobra: ${currencyFormatter.format(catSobra)}" else "Falta: ${currencyFormatter.format(catSobra)}"
                                         DropdownMenuItem(
@@ -2827,7 +2844,7 @@ fun DistributeDialog(
                                             }
                                         )
 
-                                        val subs = subcategories.filter { it.category_id == cat.id }
+                                        val subs = subcategories.filter { it.category_id == cat.id && (!it.archived || it.id == destSubcategory?.id) }
                                         subs.forEach { sub ->
                                             val subSobra = destLeftovers[Pair(cat.id, sub.id)] ?: 0.0
                                             val subStatusText = if (subSobra >= 0) "Sobra: ${currencyFormatter.format(subSobra)}" else "Falta: ${currencyFormatter.format(subSobra)}"

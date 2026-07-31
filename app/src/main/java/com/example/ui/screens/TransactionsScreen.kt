@@ -1477,10 +1477,10 @@ fun TransactionAddEditDialog(
     }
 
     var selectedCategory by remember {
-        mutableStateOf(categories.find { it.id == transactionToEdit?.category_id } ?: preSelectedCategory ?: categories.firstOrNull())
+        mutableStateOf(categories.find { it.id == transactionToEdit?.category_id } ?: preSelectedCategory ?: categories.firstOrNull { !it.archived })
     }
     var selectedSubcategory by remember {
-        mutableStateOf(subcategories.find { it.id == transactionToEdit?.subcategory_id } ?: preSelectedSubcategory ?: subcategories.firstOrNull())
+        mutableStateOf(subcategories.find { it.id == transactionToEdit?.subcategory_id } ?: preSelectedSubcategory ?: subcategories.firstOrNull { !it.archived })
     }
 
     val userId = viewModel.currentUserId
@@ -1499,9 +1499,12 @@ fun TransactionAddEditDialog(
     }
 
     // Filtered Subcategories based on Category selection
-    val filteredSubcategories = remember(selectedCategory, subcategories) {
+    val filteredSubcategories = remember(selectedCategory, subcategories, transactionToEdit, preSelectedSubcategory) {
         if (selectedCategory != null) {
-            subcategories.filter { it.category_id == selectedCategory!!.id }
+            subcategories.filter {
+                it.category_id == selectedCategory!!.id &&
+                (!it.archived || it.id == transactionToEdit?.subcategory_id || it.id == preSelectedSubcategory?.id)
+            }
         } else emptyList()
     }
 
@@ -1934,7 +1937,7 @@ fun TransactionAddEditDialog(
                                         showCatMenu = false
                                     }
                                 )
-                                categories.forEach { cat ->
+                                categories.filter { !it.archived || it.id == transactionToEdit?.category_id || it.id == preSelectedCategory?.id }.forEach { cat ->
                                     DropdownMenuItem(
                                         text = { Text(cat.name) },
                                         onClick = {
